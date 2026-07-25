@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 45; // v45: est-spend meter replaced with dollars-left balances (Venice live; Claude/GPT set-once + counted down, KV-synced)
+const BUILD = 46; // v46: image renders get a real timeout (no more HTML 502s) + full error reasons on canvas nodes
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1567,7 +1567,11 @@ async function cvAsk(nid) {
     if (!text) throw new Error("no reply returned");
     n.reply = text; n.replyBy = who; cvSave(); cvDrawEdges();
     if (stat) stat.textContent = "";
-  } catch (e) { if (stat) stat.textContent = "⚠ " + String(e.message || e); }
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (stat) { stat.textContent = "⚠ " + msg; stat.title = msg; }
+    toast("⚠ " + (msg.length > 160 ? msg.slice(0, 160) + "…" : msg));
+  }
   finally { n.busy = false; if (btn) btn.disabled = false; }
 }
 
@@ -1623,7 +1627,12 @@ async function cvGenerate(nid) {
       else req.options.aspect_ratio = n.aspect || "16:9";   // text-to-video only: image/clip sources set their own
       await cvVideoSubmit(n, req);
     }
-  } catch (e) { if (stat) stat.textContent = "⚠ " + String(e.message || e); }
+  } catch (e) {
+    // The status line truncates — put the full reason in its tooltip AND a toast.
+    const msg = String(e.message || e);
+    if (stat) { stat.textContent = "⚠ " + msg; stat.title = msg; }
+    toast("⚠ " + (msg.length > 160 ? msg.slice(0, 160) + "…" : msg));
+  }
   finally { n.busy = false; if (btn) btn.disabled = false; }
 }
 async function cvVideoSubmit(n, req) {

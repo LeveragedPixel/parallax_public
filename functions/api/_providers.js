@@ -56,10 +56,19 @@ export async function veniceBalance(key) {
   const usd = res.headers.get("x-venice-balance-usd");
   return { usd: usd != null ? Number(usd) : null };
 }
+// A slow model (or a multi-variant render) can outlive the platform's patience — without
+// our own timeout the isolate gets killed and the client sees an HTML 502 instead of a
+// reason (same failure class the video queue hit; see veniceVideoQueue below).
 export async function veniceImage(key, params) {
-  const res = await fetch(`${VENICE}/image/generate`, {
-    method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(params),
-  });
+  let res;
+  try {
+    res = await fetch(`${VENICE}/image/generate`, {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(params),
+      signal: AbortSignal.timeout(90000),
+    });
+  } catch (e) {
+    throw new Error(`Venice image ${e.name === "TimeoutError" ? "timed out (90s) — that model is slow at this size/count; try 1 variant, a smaller aspect, or a faster model" : "unreachable"} — ${e.message || e.name}`);
+  }
   const usd = res.headers.get("x-venice-balance-usd");
   if (!res.ok) throw new Error(`Venice image ${res.status}: ${(await res.text()).slice(0, 180)}`);
   const d = await res.json();
