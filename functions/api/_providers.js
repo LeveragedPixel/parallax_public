@@ -27,6 +27,32 @@ export async function saveKey(env, user, field, value) {
   await env.PARALLAX_KV.put("keys:" + user, JSON.stringify(cur));
 }
 
+/* ---------------- OpenAI images (gpt-image-*) ---------------- */
+// Direct OpenAI Images API — the same key the chat lanes use. Sizes must be divisible
+// by 16 (ratio 1:3..3:1). quality drives latency hard: high can take minutes (would
+// blow the serverless window); medium/low render in seconds-to-~30s.
+const OPENAI_IMG_SIZES = { "1:1": "1024x1024", "16:9": "1792x1024", "9:16": "1024x1792", "4:3": "1152x864", "3:2": "1248x832" };
+export async function openaiImage(key, { model, prompt, aspect, quality, n }) {
+  let res;
+  try {
+    res = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model, prompt, size: OPENAI_IMG_SIZES[aspect] || "1024x1024", quality: quality || "medium", n: Math.max(1, Math.min(4, Number(n) || 1)) }),
+      signal: AbortSignal.timeout(95000),
+    });
+  } catch (e) {
+    throw new Error(`OpenAI image ${e.name === "TimeoutError" ? 'timed out (95s) — drop quality to medium or low ("high" can take minutes)' : "unreachable"} — ${e.message || e.name}`);
+  }
+  const t = await res.text();
+  let d = {}; try { d = JSON.parse(t); } catch {}
+  if (!res.ok) {
+    const msg = (d.error && d.error.message) || t.slice(0, 200);
+    if (/verif/i.test(msg)) throw new Error("OpenAI image blocked: your OpenAI organization needs one-time verification for GPT Image models (platform.openai.com → Settings → Organization → Verify). Provider said: " + msg.slice(0, 140));
+    throw new Error(`OpenAI image ${res.status}: ${msg}`);
+  }
+  return { images: (d.data || []).map((x) => x.b64_json).filter(Boolean), model };
+}
+
 /* ---------------- Venice ---------------- */
 // Seedance 2.0 video variants (official IDs from docs.venice.ai/guides/media/seedance-2-0).
 // Venice's /models?type=video does not always enumerate these, so we always merge them in —

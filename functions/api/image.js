@@ -9,7 +9,7 @@ import { loadProject, composeSystem } from "./_projects.js";
 import { CATALOG } from "./_catalog.js";
 import { mergedCatalog } from "./_skills.js";
 import { claudeComplete } from "./_llm.js";
-import { getKeys, veniceImage, artcraftGenerate } from "./_providers.js";
+import { getKeys, veniceImage, openaiImage, artcraftGenerate } from "./_providers.js";
 import { addMedia } from "./_gallery.js";
 
 function json(obj, status = 200) {
@@ -61,6 +61,20 @@ export async function onRequestPost(context) {
   if (body.promptOnly) return json({ ok: true, stage: "prompt", promptUsed });
 
   // Step 2 — generate.
+  if (provider === "openai") {
+    if (!keys.openai) return json({ ok: true, stage: "prompt", promptUsed, note: "OpenAI not connected — add your key in Connections to render with GPT Image." });
+    try {
+      const out = await openaiImage(keys.openai, { model: opts.model || "gpt-image-2", prompt: promptUsed.slice(0, 30000), aspect: opts.aspect_ratio || "1:1", quality: opts.quality || "medium", n: opts.variants });
+      if (!out.images.length) return json({ error: "OpenAI returned no image", promptUsed });
+      const saved = [];
+      for (const b64 of out.images) {
+        const dataUrl = `data:image/png;base64,${b64}`;
+        const entry = await addMedia(env, user, { type: "image", provider: "openai", prompt: promptUsed, dataUrl, projectId: project ? project.id : null, meta: { model: opts.model || "gpt-image-2", quality: opts.quality || "medium" } });
+        saved.push({ id: entry ? entry.id : null, dataUrl });
+      }
+      return json({ ok: true, stage: "generated", provider: "openai", promptUsed, images: saved });
+    } catch (err) { return json({ error: "OpenAI image failed: " + (err.message || "unknown"), promptUsed }); }
+  }
   if (provider === "artcraft") {
     if (!keys.artcraft || !keys.artcraftBase) return json({ ok: true, stage: "prompt", promptUsed, note: "ArtCraft not fully connected — add its key + base URL in Connections." });
     try {
