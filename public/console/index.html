@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Studio Console · Leveraged Pixel</title>
+<style>
+  :root{ --void:#0a0a0c; --void2:#111114; --panel:#141418; --crimson:#c8102e; --crimson-hot:#ff3d4d; --crimson-txt:#ff5560;
+    --silver:#c9ccd1; --silver-b:#f2f4f7; --ash:#6b6e73; --ash-d:#3a3c40; --line:#1e1f24; --green:#46d17f; --amber:#ffb454;
+    --mono:"SFMono-Regular",ui-monospace,"Cascadia Mono",Menlo,monospace; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--void);color:var(--silver);font:13px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+  a{color:var(--crimson-txt);text-decoration:none} button{font:inherit;cursor:pointer;border:0}
+  input,textarea,select{font:inherit;background:var(--void);color:var(--silver);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+  textarea{resize:vertical;width:100%}
+  .hide{display:none!important}
+
+  .top{display:flex;align-items:center;gap:14px;padding:0 20px;height:52px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+  .brand{font-weight:700;letter-spacing:3px;color:var(--silver-b)} .brand b{color:var(--crimson-txt)}
+  .brand .k{color:var(--crimson-txt);font-size:11px;margin-left:4px}
+  .top .sp{flex:1}
+  .chip{font-size:11px;letter-spacing:1px;color:var(--ash);display:flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .dot.g{background:var(--green);box-shadow:0 0 7px var(--green)} .dot.r{background:var(--crimson);box-shadow:0 0 7px var(--crimson)} .dot.o{background:var(--ash)}
+  .tbtn{background:var(--void);color:var(--silver);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:11px;letter-spacing:1px}
+  .tbtn:hover{border-color:var(--crimson)}
+  .btn{background:var(--crimson);color:#fff;border-radius:6px;padding:9px 16px;font-weight:700;letter-spacing:1px;font-size:12px}
+  .btn:hover{filter:brightness(1.08)} .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--silver);border:1px solid var(--line)} .btn.ghost:hover{border-color:var(--silver)}
+
+  .tabs{display:flex;gap:4px;padding:10px 20px 0;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  .tab{background:transparent;color:var(--ash);border:1px solid transparent;border-bottom:0;border-radius:7px 7px 0 0;padding:9px 15px;font-size:11px;letter-spacing:1.5px}
+  .tab:hover{color:var(--silver)} .tab.on{color:var(--silver-b);background:var(--void);border-color:var(--line)}
+
+  main{padding:22px 20px;max-width:1180px;margin:0 auto}
+  h2.title{font-size:15px;letter-spacing:2px;color:var(--silver-b);text-transform:uppercase;margin-bottom:4px}
+  .sub{color:var(--ash);font-size:12px;margin-bottom:18px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .card{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px;position:relative;transition:.2s}
+  .card:hover{border-color:var(--crimson)}
+  .card.on{border-color:var(--crimson);box-shadow:0 0 0 1px var(--crimson) inset}
+  .card h3{font-size:15px;color:var(--silver-b);letter-spacing:1px;margin-bottom:2px}
+  .card .meta{font-size:11px;color:var(--ash);margin-top:8px;line-height:1.7}
+  .card .row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+  .kbd{font-size:10px;color:var(--ash);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+
+  .drop{border:1.5px dashed var(--line);border-radius:10px;padding:26px;text-align:center;color:var(--ash);transition:.2s;cursor:pointer}
+  .drop.hot{border-color:var(--crimson);color:var(--silver);background:rgba(200,16,46,.05)}
+  .filelist{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+  .frow{display:flex;align-items:center;gap:10px;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--void2)}
+  .frow .p{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silver-b)}
+  .frow .tag{font-size:9px;letter-spacing:1px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--ash)}
+  .frow .tag.new{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,transparent)}
+  .frow .tag.mod{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent)}
+  .frow .tag.del{color:var(--crimson-hot);border-color:color-mix(in srgb,var(--crimson) 40%,transparent)}
+  .frow .x{color:var(--ash);background:transparent;padding:2px 6px} .frow .x:hover{color:var(--crimson-hot)}
+
+  .list{display:flex;flex-direction:column;gap:8px}
+  .item{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--panel);display:flex;align-items:center;gap:12px}
+  .item .m{flex:1;min-width:0}
+  .item .msg{color:var(--silver-b);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .sm{color:var(--ash);font-size:10.5px;margin-top:3px}
+  .sha{font-size:10px;color:var(--ash);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+
+  .tree{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+  .tline{padding:6px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid rgba(30,31,36,.5);display:flex;gap:8px}
+  .tline:hover{background:var(--void2);color:var(--silver-b)} .tline .sz{margin-left:auto;color:var(--ash-d);font-size:10px}
+  .viewer{margin-top:14px;border:1px solid var(--line);border-radius:8px;background:var(--void);max-height:56vh;overflow:auto}
+  .viewer pre{padding:14px;font-size:11.5px;color:var(--silver);white-space:pre-wrap;word-break:break-word}
+
+  .note{font-size:11px;color:var(--ash);border-left:2px solid var(--crimson);padding:8px 12px;background:rgba(200,16,46,.05);border-radius:0 6px 6px 0;margin:10px 0}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--panel);border:1px solid var(--crimson);color:var(--silver-b);padding:10px 18px;border-radius:8px;opacity:0;transition:.25s;z-index:50;font-size:12px;max-width:80vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .login{max-width:340px;margin:16vh auto;text-align:center}
+  .login input{width:100%;margin-top:10px} .login .btn{width:100%;margin-top:12px}
+  label.f{display:block;font-size:10px;letter-spacing:1.5px;color:var(--ash);text-transform:uppercase;margin:12px 0 5px}
+  .rowflex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="login hide">
+  <div class="brand">STUDIO <b>CONSOLE</b></div>
+  <input id="u" placeholder="operator" />
+  <input id="p" type="password" placeholder="passphrase" />
+  <button class="btn" id="loginBtn">SIGN IN</button>
+  <div id="loginMsg" style="color:var(--crimson-txt);font-size:11px;margin-top:8px"></div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hide">
+  <div class="top">
+    <div class="brand">STUDIO <b>CONSOLE</b><span class="k">改善</span></div>
+    <span class="chip" id="tokChip"><span class="dot o"></span>token</span>
+    <span class="chip" id="repoChip">—</span>
+    <div class="sp"></div>
+    <a class="chip" id="liveLink" target="_blank" rel="noopener">live ↗</a>
+    <button class="tbtn" id="logoutBtn">SIGN OUT</button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <main id="view"></main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fflate/0.8.2/umd/index.min.js"></script>
+<script>
+const $ = (id)=>document.getElementById(id);
+const TKEY="plx-token";
+let token = localStorage.getItem(TKEY) || "";
+let repos=[], curRepo=null, tokenSet=false, pubFiles=[], treeCache=null, tab="projects";
+
+const H = ()=>({Authorization:"Bearer "+token,"Content-Type":"application/json"});
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2800);}
+const esc=(s)=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function apiRepo(payload){
+  const r=await fetch("/api/repo",{method:"POST",headers:H(),body:JSON.stringify(payload)});
+  if(r.status===401){logout();throw new Error("session expired");}
+  const raw=await r.text(); let d; try{d=JSON.parse(raw);}catch{throw new Error("server sent a non-JSON response (HTTP "+r.status+")");}
+  if(d.error) throw new Error(d.error);
+  return d;
+}
+const fmtTime=(t)=>{ if(!t) return ""; const d=new Date(t); return d.toLocaleString(); };
+const ago=(iso)=>{ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(s<60)return"just now"; if(s<3600)return Math.floor(s/60)+"m ago"; if(s<86400)return Math.floor(s/3600)+"h ago"; return Math.floor(s/86400)+"d ago"; };
+
+/* auth */
+async function login(){
+  $("loginMsg").textContent="…";
+  try{
+    const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("u").value,password:$("p").value})});
+    const d=await r.json();
+    if(!d.ok){$("loginMsg").textContent=d.error||"login failed";return;}
+    token=d.token; localStorage.setItem(TKEY,token); boot();
+  }catch(e){$("loginMsg").textContent=String(e.message||e);}
+}
+function logout(){token="";localStorage.removeItem(TKEY);$("app").classList.add("hide");$("login").classList.remove("hide");}
+
+/* boot */
+async function boot(){
+  $("login").classList.add("hide"); $("app").classList.remove("hide");
+  try{
+    const d=await apiRepo({action:"repos.list"});
+    repos=d.repos||[]; tokenSet=!!d.tokenSet; curRepo=repos[0]||null;
+    $("tokChip").innerHTML=`<span class="dot ${tokenSet?'g':'r'}"></span>${tokenSet?'token OK':'no token'}`;
+    renderTabs(); setTab("projects");
+  }catch(e){ if(String(e.message).includes("expired"))return; toast(e.message); }
+}
+function repoHeader(){
+  $("repoChip").textContent = curRepo? `${curRepo.owner}/${curRepo.repo} · ${curRepo.branch||'main'}` : "no repo";
+  const live=$("liveLink"); if(curRepo&&curRepo.liveUrl){live.href=curRepo.liveUrl;live.classList.remove("hide");}else live.classList.add("hide");
+}
+
+const TABS=[["projects","PROJECTS"],["publish","PUBLISH"],["files","FILES"],["history","HISTORY"],["deploys","DEPLOYS"],["activity","ACTIVITY"],["settings","SETTINGS"]];
+function renderTabs(){ $("tabs").innerHTML=""; for(const [id,label] of TABS){ const b=document.createElement("button"); b.className="tab"+(tab===id?" on":""); b.textContent=label; b.onclick=()=>setTab(id); $("tabs").appendChild(b);} }
+function setTab(id){ tab=id; renderTabs(); repoHeader(); ({projects:viewProjects,publish:viewPublish,files:viewFiles,history:viewHistory,deploys:viewDeploys,activity:viewActivity,settings:viewSettings}[id]||viewProjects)(); }
+
+/* ---------- PROJECTS ---------- */
+function viewProjects(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Projects</h2><div class="sub">Every repo the studio deploys, in one place. Select one to publish, browse, or roll back.</div><div class="grid" id="pgrid"></div>
+    <div style="margin-top:16px"><button class="btn ghost" id="addRepo">+ ADD PROJECT</button></div>`;
+  const g=$("pgrid");
+  if(!repos.length){ g.innerHTML=`<div class="sub">No projects yet. Add one — it just needs owner/repo/branch.</div>`; }
+  for(const r of repos){
+    const c=document.createElement("div"); c.className="card"+(curRepo&&curRepo.id===r.id?" on":"");
+    c.innerHTML=`<h3>${esc(r.name||r.repo)}</h3><div class="meta">${esc(r.owner)}/${esc(r.repo)} · <span class="kbd">${esc(r.branch||'main')}</span></div>
+      <div class="row">
+        <button class="tbtn" data-sel>SELECT</button>
+        <a class="tbtn" href="https://github.com/${esc(r.owner)}/${esc(r.repo)}" target="_blank" rel="noopener">GitHub ↗</a>
+        ${r.liveUrl?`<a class="tbtn" href="${esc(r.liveUrl)}" target="_blank" rel="noopener">Live ↗</a>`:""}
+        <button class="tbtn" data-edit>edit</button>
+      </div>`;
+    c.querySelector("[data-sel]").onclick=()=>{curRepo=r;toast("selected "+(r.name||r.repo));viewProjects();repoHeader();};
+    c.querySelector("[data-edit]").onclick=()=>editRepo(r);
+    g.appendChild(c);
+  }
+  $("addRepo").onclick=()=>editRepo(null);
+}
+function editRepo(r){
+  const v=$("view"); const e=r||{owner:"",repo:"",branch:"main",name:"",liveUrl:""};
+  v.innerHTML=`<h2 class="title">${r?"Edit":"Add"} project</h2>
+    <div style="max-width:460px">
+      <label class="f">Display name</label><input id="e_name" value="${esc(e.name||'')}" placeholder="Parallax" />
+      <label class="f">Owner</label><input id="e_owner" value="${esc(e.owner||'')}" placeholder="your-github-user" />
+      <label class="f">Repo</label><input id="e_repo" value="${esc(e.repo||'')}" placeholder="parallax" />
+      <label class="f">Branch</label><input id="e_branch" value="${esc(e.branch||'main')}" />
+      <label class="f">Live URL (optional)</label><input id="e_live" value="${esc(e.liveUrl||'')}" placeholder="https://example.com" />
+      <div class="rowflex" style="margin-top:16px">
+        <button class="btn" id="e_save">SAVE</button>
+        <button class="btn ghost" id="e_cancel">Cancel</button>
+        ${r?'<button class="btn ghost" id="e_del" style="margin-left:auto;color:var(--crimson-hot)">Delete</button>':''}
+      </div>
+    </div>`;
+  $("e_cancel").onclick=viewProjects;
+  $("e_save").onclick=async()=>{
+    const repo={id:e.id,name:$("e_name").value.trim(),owner:$("e_owner").value.trim(),repo:$("e_repo").value.trim(),branch:$("e_branch").value.trim()||"main",liveUrl:$("e_live").value.trim()};
+    if(!repo.owner||!repo.repo){toast("owner and repo required");return;}
+    try{const d=await apiRepo({action:"repos.save",repo});repos=d.repos;curRepo=repos.find(x=>x.owner===repo.owner&&x.repo===repo.repo)||curRepo;toast("saved");viewProjects();repoHeader();}catch(err){toast(err.message);}
+  };
+  if(r&&$("e_del"))$("e_del").onclick=async()=>{try{const d=await apiRepo({action:"repos.delete",id:r.id});repos=d.repos;curRepo=repos[0]||null;toast("deleted");viewProjects();repoHeader();}catch(err){toast(err.message);}};
+}
+
+/* ---------- PUBLISH ---------- */
+function viewPublish(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Publish → ${curRepo?esc(curRepo.name||curRepo.repo):'—'}</h2>
+    <div class="sub">Drop the <b>.zip</b> Claude gave you (it unpacks automatically) — or a folder, loose files, or paste one file. It commits atomically — all or nothing, no partial deploys. Cloudflare redeploys automatically.</div>
+    ${tokenSet?'':'<div class="note">No GitHub token set yet — add <b>GITHUB_TOKEN</b> in Cloudflare env (see Settings) before publishing.</div>'}
+    <div class="drop" id="drop">⬇ drop a <b>.zip</b>, a folder, or files &nbsp;·&nbsp; or <label style="color:var(--crimson-txt);cursor:pointer">browse<input id="pf" type="file" multiple style="display:none"></label>
+      <div style="font-size:10px;margin-top:6px;color:var(--ash-d)">a zip unpacks with its paths kept · e.g. public/index.html, functions/api/repo.js</div></div>
+    <div class="filelist" id="pflist"></div>
+    <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--ash);font-size:11px">paste a single file instead</summary>
+      <label class="f">Path in repo</label><input id="pp_path" placeholder="public/index.html" />
+      <label class="f">Contents</label><textarea id="pp_body" rows="8" placeholder="paste file contents…"></textarea>
+      <button class="tbtn" id="pp_add" style="margin-top:8px">add to publish set</button>
+    </details>
+    <label class="f" style="margin-top:16px">Commit message</label>
+    <input id="pmsg" placeholder="e.g. landing: underwater hero + sakura" />
+    <div id="pubwarn" style="display:none;margin-top:12px"></div>
+    <div class="rowflex" style="margin-top:14px">
+      <button class="btn" id="pubBtn" disabled>PUBLISH ${''}</button>
+      <button class="btn ghost" id="diffBtn" disabled>PREVIEW DIFF</button>
+      <span id="pubcount" style="color:var(--ash);font-size:11px"></span>
+    </div>
+    <div id="diffOut" style="margin-top:14px"></div>`;
+  const drop=$("drop");
+  ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
+  ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
+  drop.addEventListener("drop",e=>handleDrop(e));
+  $("pf").onchange=e=>{ addFiles([...e.target.files]); e.target.value=""; };
+  $("pp_add").onclick=()=>{ const p=$("pp_path").value.trim(); const b=$("pp_body").value; if(!p){toast("path required");return;} addPubFile({path:p,content:b,base64:false}); $("pp_path").value="";$("pp_body").value=""; };
+  $("pubBtn").onclick=publish; $("diffBtn").onclick=previewDiff;
+  renderPubList();
+}
+function relPath(f){ return f.webkitRelativePath && f.webkitRelativePath.length ? f.webkitRelativePath : f.name; }
+function isBinary(name){ return /\.(png|jpe?g|gif|webp|ico|mp4|mov|zip|pdf|woff2?)$/i.test(name); }
+async function handleDrop(e){
+  const items=e.dataTransfer.items; const files=[];
+  if(items && items.length && items[0].webkitGetAsEntry){
+    const walk=(entry,path)=>new Promise(res=>{
+      if(entry.isFile){ entry.file(f=>{ f._path=(path+entry.name); files.push(f); res(); }); }
+      else if(entry.isDirectory){ const rd=entry.createReader(); rd.readEntries(async ents=>{ for(const en of ents) await walk(en,path+entry.name+"/"); res(); }); }
+      else res();
+    });
+    const roots=[]; for(const it of items){ const en=it.webkitGetAsEntry&&it.webkitGetAsEntry(); if(en)roots.push(walk(en,"")); }
+    await Promise.all(roots); addFiles(files,true);
+  } else { addFiles([...e.dataTransfer.files]); }
+}
+function addFiles(files,usePath){
+  files.forEach(f=>{
+    const path=usePath&&f._path?f._path:relPath(f);
+    if(/\.zip$/i.test(path)){ addZip(f); return; }
+    const r=new FileReader();
+    if(isBinary(path)){ r.onload=()=>{ const b64=String(r.result).split(",")[1]||""; addPubFile({path,content:b64,base64:true}); }; r.readAsDataURL(f); }
+    else { r.onload=()=>addPubFile({path,content:String(r.result),base64:false}); r.readAsText(f); }
+  });
+}
+// Drop a .zip → unpack it in the browser (fflate) and stage every file with its path intact.
+async function addZip(file){
+  if(typeof fflate==="undefined"){ toast("unzip is still loading — try again in a second"); return; }
+  let unzipped;
+  try{ unzipped=fflate.unzipSync(new Uint8Array(await file.arrayBuffer())); }
+  catch(e){ toast("couldn't read "+file.name+": "+(e.message||e)); return; }
+  let n=0;
+  for(const path in unzipped){
+    if(path.endsWith("/")) continue;
+    if(/(^|\/)(__MACOSX\/|\.DS_Store$)/.test(path)) continue;
+    const data=unzipped[path];
+    if(isBinary(path)){ let bin=""; const CH=0x8000; for(let i=0;i<data.length;i+=CH) bin+=String.fromCharCode.apply(null,data.subarray(i,i+CH)); addPubFile({path,content:btoa(bin),base64:true}); }
+    else addPubFile({path,content:new TextDecoder().decode(data),base64:false});
+    n++;
+  }
+  toast(n?`unpacked ${n} file(s) from ${file.name} — review & Publish`:"zip had no files");
+}
+function addPubFile(f){ const i=pubFiles.findIndex(x=>x.path===f.path); if(i>=0)pubFiles[i]=f; else pubFiles.push(f); renderPubList(); }
+function renderPubList(){
+  const box=$("pflist"); if(!box)return; box.innerHTML="";
+  pubFiles.forEach((f,i)=>{
+    const row=document.createElement("div"); row.className="frow";
+    row.innerHTML=`<span class="tag ${f.delete?'del':'new'}">${f.delete?'DEL':(f.base64?'BIN':'FILE')}</span><span class="p">${esc(f.path)}</span><span style="color:var(--ash-d);font-size:10px">${f.delete?'':((f.content||'').length)+'b'}</span><button class="x">✕</button>`;
+    row.querySelector(".x").onclick=()=>{pubFiles.splice(i,1);renderPubList();};
+    box.appendChild(row);
+  });
+  const n=pubFiles.length;
+  if($("pubBtn")){$("pubBtn").disabled=!n||!tokenSet; $("pubBtn").textContent="PUBLISH "+(n?`(${n})`:"");}
+  if($("diffBtn"))$("diffBtn").disabled=!n||!tokenSet;
+  if($("pubcount"))$("pubcount").textContent=n?`${n} file${n>1?'s':''} staged`:"";
+  checkLandingGuard();
+}
+// Guard: catch the #1 foot-gun — publishing the Parallax app to public/index.html, which
+// overwrites the landing so the root domain shows Parallax. The landing's <title> is
+// "Leveraged Pixel Studios"; Parallax's is "PARALLAX 2.0", so we can tell them apart.
+function landingClobberFile(){
+  return pubFiles.find(f=>{
+    if(f.delete||f.base64) return false;
+    const p=String(f.path||"").replace(/^\/+/,"");
+    if(p!=="public/index.html" && p!=="index.html") return false;
+    return /<title>\s*PARALLAX/i.test(f.content||"") || /DUAL-MIND CONSOLE/i.test(f.content||"");
+  })||null;
+}
+function checkLandingGuard(){
+  const w=$("pubwarn"); if(!w) return;
+  const bad=landingClobberFile();
+  if(!bad){ w.style.display="none"; w.innerHTML=""; return; }
+  w.style.display="block";
+  w.innerHTML=`<div style="border:1px solid #a11824;background:rgba(200,20,30,.12);color:#ffd7d7;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.55">
+    ⚠ <b>This will overwrite your landing page.</b> The file staged at <code>${esc(bad.path)}</code> is the <b>Parallax app</b>, not your landing — publishing it makes the root domain show Parallax. Parallax belongs at <code>public/parallax/index.html</code>.
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="tbtn" id="guardFix">↪ Move it to public/parallax/index.html</button>
+      <button class="tbtn ghost" id="guardRm">✕ Remove it from this publish</button>
+    </div></div>`;
+  $("guardFix").onclick=()=>{ bad.path="public/parallax/index.html"; renderPubList(); toast("re-pathed to public/parallax/index.html — landing is safe"); };
+  $("guardRm").onclick=()=>{ const i=pubFiles.indexOf(bad); if(i>=0)pubFiles.splice(i,1); renderPubList(); toast("removed the Parallax index from this publish"); };
+}
+async function previewDiff(){
+  const out=$("diffOut"); out.innerHTML=`<div class="sub">comparing against ${esc(curRepo.branch||'main')}…</div>`;
+  let html="";
+  for(const f of pubFiles){
+    let status="new";
+    try{ const cur=await apiRepo({action:"file",repoId:curRepo.id,path:f.path}); if(cur.ok){ status = (cur.content===f.content)?"same":"mod"; } }
+    catch(e){ status = String(e.message).includes("404")?"new":"?"; }
+    if(f.delete)status="del";
+    html+=`<div class="frow"><span class="tag ${status==='new'?'new':status==='del'?'del':status==='mod'?'mod':''}">${status.toUpperCase()}</span><span class="p">${esc(f.path)}</span></div>`;
+  }
+  out.innerHTML=`<div class="list">${html}</div><div class="note">Diff is per-file (new / modified / unchanged / delete). Publishing commits them together atomically.</div>`;
+}
+async function publish(){
+  if(!pubFiles.length)return;
+  if(landingClobberFile()){ toast("⚠ Blocked: this would overwrite your landing with Parallax. Use “Move it to /parallax/” or remove that file first."); checkLandingGuard(); return; }
+  const msg=$("pmsg").value.trim()||"Update via Studio Console";
+  $("pubBtn").disabled=true; toast("publishing "+pubFiles.length+" file(s)…");
+  try{
+    const d=await apiRepo({action:"commit",repoId:curRepo.id,message:msg,files:pubFiles});
+    $("diffOut").innerHTML=`<div class="note">✓ Published commit <a href="${d.url}" target="_blank" rel="noopener">${d.sha.slice(0,7)} ↗</a> — ${d.count} file(s). Cloudflare will redeploy in ~1–2 min; refresh your site then.</div>`;
+    pubFiles=[]; renderPubList(); toast("published ✓");
+  }catch(e){ toast(e.message); $("pubBtn").disabled=false; }
+}
+
+/* ---------- FILES ---------- */
+async function viewFiles(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Files · ${curRepo?esc(curRepo.repo):'—'}</h2><div class="sub">Browse and read any file on <span class="kbd">${esc(curRepo?curRepo.branch:'main')}</span> — reference code without leaving the studio.</div>
+    <input id="fsearch" placeholder="filter files…" style="max-width:360px" /><div class="tree" id="tree" style="margin-top:12px"></div><div id="fview"></div>`;
+  const tree=$("tree"); tree.innerHTML=`<div class="tline">loading…</div>`;
+  try{
+    const d=await apiRepo({action:"tree",repoId:curRepo.id}); treeCache=d.files||[];
+    const draw=(filter)=>{ tree.innerHTML=""; const list=treeCache.filter(f=>!filter||f.path.toLowerCase().includes(filter)).slice(0,600);
+      if(!list.length){tree.innerHTML=`<div class="tline">no match</div>`;return;}
+      list.forEach(f=>{ const el=document.createElement("div"); el.className="tline"; el.innerHTML=`<span>📄</span><span>${esc(f.path)}</span><span class="sz">${f.size||0}b</span>`; el.onclick=()=>openFile(f.path); tree.appendChild(el); }); };
+    draw(""); $("fsearch").oninput=e=>draw(e.target.value.toLowerCase().trim());
+    if(d.truncated) tree.insertAdjacentHTML("afterbegin",`<div class="tline" style="color:var(--amber)">tree truncated (very large repo)</div>`);
+  }catch(e){ tree.innerHTML=`<div class="tline">${esc(e.message)}</div>`; }
+}
+async function openFile(path){
+  const fv=$("fview"); fv.innerHTML=`<div class="sub" style="margin-top:14px">loading ${esc(path)}…</div>`;
+  try{ const d=await apiRepo({action:"file",repoId:curRepo.id,path});
+    if(d.binary){ fv.innerHTML=`<div class="note">${esc(path)} — binary file (${d.size||0} bytes). <a href="https://github.com/${esc(curRepo.owner)}/${esc(curRepo.repo)}/blob/${esc(curRepo.branch||'main')}/${esc(path)}" target="_blank" rel="noopener">view on GitHub ↗</a></div>`; return; }
+    fv.innerHTML=`<div class="rowflex" style="margin-top:14px"><b style="color:var(--silver-b);font-size:12px">${esc(path)}</b><span class="sha">${(d.sha||'').slice(0,7)}</span><button class="tbtn" id="toPub">stage for edit →</button></div><div class="viewer"><pre>${esc(d.content)}</pre></div>`;
+    $("toPub").onclick=()=>{ addPubFile({path,content:d.content,base64:false}); toast("staged in Publish — edit & publish"); };
+  }catch(e){ fv.innerHTML=`<div class="note">${esc(e.message)}</div>`; }
+}
+
+/* ---------- HISTORY ---------- */
+async function viewHistory(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">History · ${curRepo?esc(curRepo.repo):'—'}</h2><div class="sub">Recent commits. Roll back to any of them with one click — it restores that version as a new commit (safe, nothing is lost).</div><div class="list" id="clist"><div class="sub">loading…</div></div>`;
+  try{
+    const d=await apiRepo({action:"commits",repoId:curRepo.id});
+    const box=$("clist"); box.innerHTML="";
+    (d.commits||[]).forEach((c,idx)=>{
+      const el=document.createElement("div"); el.className="item";
+      el.innerHTML=`<span class="sha">${c.sha.slice(0,7)}</span><div class="m"><div class="msg">${esc((c.message||'').split("\n")[0])}</div><div class="sm">${esc(c.author||'')} · ${ago(c.date)}</div></div>
+        <a class="tbtn" href="${c.url}" target="_blank" rel="noopener">view ↗</a>${idx===0?'<span class="kbd">HEAD</span>':`<button class="tbtn" data-rb style="color:var(--amber)">rollback</button>`}`;
+      const rb=el.querySelector("[data-rb]"); if(rb) rb.onclick=()=>rollback(c);
+      box.appendChild(el);
+    });
+    if(!d.commits||!d.commits.length)box.innerHTML=`<div class="sub">no commits</div>`;
+  }catch(e){ $("clist").innerHTML=`<div class="note">${esc(e.message)}</div>`; }
+}
+async function rollback(c){
+  if(!confirm(`Roll back ${curRepo.repo} to ${c.sha.slice(0,7)} — "${(c.message||'').split("\n")[0]}"?\n\nThis restores that version as a NEW commit and redeploys. Nothing is deleted.`))return;
+  toast("rolling back…");
+  try{ const d=await apiRepo({action:"revert",repoId:curRepo.id,sha:c.sha}); toast("rolled back ✓"); viewHistory(); }
+  catch(e){ toast(e.message); }
+}
+
+/* ---------- DEPLOYS ---------- */
+async function viewDeploys(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Deploys</h2><div class="sub">Live Cloudflare Pages deployment status.</div><div class="list" id="dlist"><div class="sub">loading…</div></div>`;
+  try{
+    const d=await apiRepo({action:"deploys",repoId:curRepo.id});
+    const box=$("dlist");
+    if(!d.configured){ box.innerHTML=`<div class="note">${esc(d.note||'Add Cloudflare env vars to enable deploy status.')}</div>`; return; }
+    box.innerHTML="";
+    (d.deploys||[]).forEach(x=>{
+      const ok=/success/i.test(x.status), fail=/fail|error/i.test(x.status);
+      const el=document.createElement("div"); el.className="item";
+      el.innerHTML=`<span class="dot ${ok?'g':fail?'r':'o'}"></span><div class="m"><div class="msg">${esc(x.env||'production')} · ${esc(x.status)}${x.commit?' · '+esc(x.commit):''}</div><div class="sm">${ago(x.created)}</div></div>${x.url?`<a class="tbtn" href="${esc(x.url)}" target="_blank" rel="noopener">open ↗</a>`:''}`;
+      box.appendChild(el);
+    });
+    if(!d.deploys||!d.deploys.length)box.innerHTML=`<div class="sub">no deployments</div>`;
+  }catch(e){ $("dlist").innerHTML=`<div class="note">${esc(e.message)}</div>`; }
+}
+
+/* ---------- ACTIVITY ---------- */
+async function viewActivity(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Activity</h2><div class="sub">Every publish and rollback made through the console — an audit trail as the team grows.</div><div class="list" id="alist"><div class="sub">loading…</div></div>`;
+  try{
+    const d=await apiRepo({action:"log"}); const box=$("alist"); box.innerHTML="";
+    (d.log||[]).forEach(e=>{
+      const el=document.createElement("div"); el.className="item";
+      const files=(e.files||[]).length?` · ${e.files.length} file(s)`:"";
+      el.innerHTML=`<span class="sha">${e.action}</span><div class="m"><div class="msg">${esc(e.repo||'')} ${e.message?'— '+esc(e.message):''}${e.to?'→ '+esc(e.to.slice(0,7)):''}</div><div class="sm">${fmtTime(e.t)}${esc(files)}</div></div>${e.sha?`<a class="tbtn" href="https://github.com/${esc(e.repo)}/commit/${esc(e.sha)}" target="_blank" rel="noopener">${e.sha.slice(0,7)} ↗</a>`:''}`;
+      box.appendChild(el);
+    });
+    if(!d.log||!d.log.length)box.innerHTML=`<div class="sub">no activity yet</div>`;
+  }catch(e){ $("alist").innerHTML=`<div class="note">${esc(e.message)}</div>`; }
+}
+
+/* ---------- SETTINGS ---------- */
+function viewSettings(){
+  const v=$("view");
+  v.innerHTML=`<h2 class="title">Settings</h2><div class="sub">One-time setup. Secrets live in Cloudflare — never in the browser, never in chat.</div>
+    <div class="card" style="max-width:640px">
+      <h3>GitHub token <span class="dot ${tokenSet?'g':'r'}" style="margin-left:6px"></span></h3>
+      <div class="meta">Status: <b style="color:${tokenSet?'var(--green)':'var(--crimson-hot)'}">${tokenSet?'configured':'not set'}</b></div>
+      <div class="note" style="margin-top:12px">In <b>Cloudflare Pages → your project → Settings → Environment variables</b>, add:
+        <div style="margin-top:8px;font-size:11px;color:var(--silver)">
+          <div><span class="kbd">GITHUB_TOKEN</span> — a fine-grained PAT, scoped to your repos, <b>Contents: Read &amp; write</b></div>
+          <div style="margin-top:4px"><span class="kbd">GITHUB_REPO</span> — e.g. <span class="kbd">your-user/your-repo</span> (default project)</div>
+          <div style="margin-top:4px"><span class="kbd">GITHUB_BRANCH</span> — e.g. <span class="kbd">main</span> (optional)</div>
+        </div>
+      </div>
+      <div class="meta" style="margin-top:10px">Create the token at github.com → Settings → Developer settings → Fine-grained tokens. Give it access only to the repos you manage here.</div>
+    </div>
+    <div class="card" style="max-width:640px;margin-top:14px">
+      <h3>Deploy status (optional)</h3>
+      <div class="meta">To show live Cloudflare deploy status in the Deploys tab, also add:</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--silver)">
+        <div><span class="kbd">CF_API_TOKEN</span> · <span class="kbd">CF_ACCOUNT_ID</span> · <span class="kbd">CF_PAGES_PROJECT</span></div>
+      </div>
+    </div>
+    <div class="card" style="max-width:640px;margin-top:14px">
+      <h3>How publishing works</h3>
+      <div class="meta">Files you drop are committed together in one atomic commit via the GitHub API, using the server-side token. GitHub notifies Cloudflare, which rebuilds and deploys automatically. You never touch git or a code editor — and a failed/partial upload is impossible, because it's one commit.</div>
+    </div>`;
+}
+
+/* wire */
+$("loginBtn").onclick=login;
+$("p").addEventListener("keydown",e=>{if(e.key==="Enter")login();});
+$("logoutBtn").onclick=logout;
+if(token) boot(); else { $("login").classList.remove("hide"); }
+</script>
+</body>
+</html>
