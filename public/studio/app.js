@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 46; // v46: image renders get a real timeout (no more HTML 502s) + full error reasons on canvas nodes
+const BUILD = 47; // v47: variants render in parallel (1 per request) + 60s image guard that beats the platform kill
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1608,18 +1608,33 @@ async function cvGenerate(nid) {
     const prompt = await cvWritePromptFor(n, src, "claude", $("mClaude").value);
     if (!prompt) throw new Error("prompt writing returned nothing");
     if (out === "image") {
-      if (stat) stat.textContent = "rendering…";
-      const r = await api("/api/image", { brief: text || "recreate the source image", prewritten: prompt, options: { provider: "venice", model: n.rmodel || undefined, format: "webp", aspect_ratio: n.aspect || "1:1", variants: n.count || "1" } });
-      if (r.error) throw new Error(r.error);
-      if (r.stage !== "generated" || !r.images || !r.images.length) throw new Error(r.note || "no image returned");
-      if (r.balanceUsd != null) cvCost(r.balanceUsd);
-      r.images.forEach((im, i) => {
-        const child = { id: cvId(), kind: "image", x: n.x + (n.w || 320) + 90, y: n.y - 40 + i * 250, w: 280, galleryId: im.id || null, dataUrl: im.dataUrl, parentId: n.id, skills: (n.skills || []).slice() };
-        cv.nodes.push(child); cv.edges.push({ from: n.id, to: child.id });
-        cvAddNodeEl(child);
+      // Variants fan out as PARALLEL single-image renders: N never takes longer than 1,
+      // one slow/failed render can't kill the batch, and each request stays well inside
+      // the serverless window (the old single ×N request was what hit platform 502s).
+      const count = Math.max(1, Math.min(4, Number(n.count || "1") || 1));
+      if (stat) stat.textContent = count > 1 ? `rendering ${count} in parallel…` : "rendering…";
+      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, options: { provider: "venice", model: n.rmodel || undefined, format: "webp", aspect_ratio: n.aspect || "1:1", variants: "1" } };
+      const results = await Promise.allSettled(Array.from({ length: count }, () => api("/api/image", { ...reqBase, options: { ...reqBase.options } })));
+      let ok = 0, lastErr = null, bal = null;
+      results.forEach((res, i) => {
+        const v = res.status === "fulfilled" ? res.value : null;
+        if (v && !v.error && v.stage === "generated" && v.images && v.images.length) {
+          if (v.balanceUsd != null) bal = v.balanceUsd;
+          const im = v.images[0];
+          const child = { id: cvId(), kind: "image", x: n.x + (n.w || 320) + 90, y: n.y - 40 + i * 250, w: 280, galleryId: im.id || null, dataUrl: im.dataUrl, parentId: n.id, skills: (n.skills || []).slice() };
+          cv.nodes.push(child); cv.edges.push({ from: n.id, to: child.id });
+          cvAddNodeEl(child); ok++;
+        } else {
+          lastErr = res.status === "rejected" ? res.reason : new Error((v && (v.error || v.note)) || "no image returned");
+        }
       });
+      if (bal != null) cvCost(bal);
       cvSave(); cvDrawEdges(); loadRefWallIfOpen();
-      if (stat) stat.textContent = "done ✓";
+      if (!ok) throw lastErr || new Error("no image returned");
+      if (stat) {
+        stat.textContent = ok === count ? "done ✓" : `done ${ok}/${count} — one failed: ${String((lastErr && lastErr.message) || "")}`.slice(0, 140);
+        if (ok !== count && lastErr) stat.title = String(lastErr.message || lastErr);
+      }
     } else {
       const req = { brief: text || "animate the source", prewritten: prompt, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p" } };
       if (src.att) req.images = [{ media_type: src.att.media_type, data: src.att.data }];
