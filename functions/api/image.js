@@ -54,7 +54,7 @@ export async function onRequestPost(context) {
     try {
       const written = await claudeComplete(keys.anthropic, promptModel, composeSystem(project, await mergedCatalog(env, user)), content);
       promptUsed = firstBlock(written);
-    } catch (err) { return json({ error: "prompt generation failed: " + (err.message || "unknown") }, 502); }
+    } catch (err) { return json({ error: "prompt generation failed: " + (err.message || "unknown") }); }
   }
 
   // Prompt-only mode: return the written prompt without generating (for copy / preview).
@@ -76,7 +76,7 @@ export async function onRequestPost(context) {
       };
       const g = await artcraftGenerate(keys.artcraftBase, keys.artcraft, "image", opts.model || "multi_function/nano_banana_pro", acBody);
       return json({ ok: true, stage: "queued", provider: "artcraft", job: g.job, promptUsed });
-    } catch (err) { return json({ error: "ArtCraft image failed: " + (err.message || "unknown"), promptUsed }, 502); }
+    } catch (err) { return json({ error: "ArtCraft image failed: " + (err.message || "unknown"), promptUsed }); }
   }
 
   if (!keys.venice) return json({ ok: true, stage: "prompt", promptUsed, note: "Venice not connected — add your key in Connections to generate." });
@@ -95,6 +95,6 @@ export async function onRequestPost(context) {
       saved.push({ id: entry ? entry.id : null, dataUrl });
     }
     return json({ ok: true, stage: "generated", provider: "venice", promptUsed, images: saved, balanceUsd: out.balanceUsd });
-  } catch (err) { return json({ error: "image gen failed: " + (err.message || "unknown"), promptUsed }, 502); }
-  } catch (fatal) { return json({ error: "image failed: " + (fatal.message || "unknown") }, 500); }
+  } catch (err) { return json({ error: "image gen failed: " + (err.message || "unknown"), promptUsed }); }
+  } catch (fatal) { return json({ error: "image failed: " + (fatal.message || "unknown") }); }
 }

@@ -64,10 +64,10 @@ export async function veniceImage(key, params) {
   try {
     res = await fetch(`${VENICE}/image/generate`, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(params),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(75000),
     });
   } catch (e) {
-    throw new Error(`Venice image ${e.name === "TimeoutError" ? "timed out (60s) — this model can't finish a render inside the serverless window; use a faster model for drafts (SD 3.5 etc.) and save the heavy one for finals" : "unreachable"} — ${e.message || e.name}`);
+    throw new Error(`Venice image ${e.name === "TimeoutError" ? "timed out (75s) — this model can't finish a render inside the serverless window; use a faster model for drafts (SD 3.5 etc.) and save the heavy one for finals" : "unreachable"} — ${e.message || e.name}`);
   }
   const usd = res.headers.get("x-venice-balance-usd");
   if (!res.ok) throw new Error(`Venice image ${res.status}: ${(await res.text()).slice(0, 180)}`);

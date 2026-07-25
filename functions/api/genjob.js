@@ -27,7 +27,7 @@ export async function onRequestGet(context) {
   const user = userFromToken(token);
   const keys = await getKeys(env, user);
   if (provider !== "artcraft") return json({ error: "unsupported provider" }, 400);
-  if (!keys.artcraft || !keys.artcraftBase) return json({ error: "ArtCraft not connected" }, 500);
+  if (!keys.artcraft || !keys.artcraftBase) return json({ error: "ArtCraft not connected" });
 
   try {
     const r = await artcraftJob(keys.artcraftBase, keys.artcraft, job);
@@ -38,6 +38,6 @@ export async function onRequestGet(context) {
     }
     return json({ ok: true, status: r.status, done: r.done, failed: r.failed, url: r.url, mediaId });
   } catch (err) {
-    return json({ error: "job poll failed: " + (err.message || "unknown") }, 502);
+    return json({ error: "job poll failed: " + (err.message || "unknown") });
   }
 }

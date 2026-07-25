@@ -50,7 +50,7 @@ export async function onRequestPost(context) {
     if (imageUrl) content.push({ type: "text", text: `Reference image URL: ${imageUrl}` });
     content.push({ type: "text", text: brief || "Write a Seedance prompt for the provided reference image(s)." });
     try { yaml = await claudeComplete(keys.anthropic, promptModel, composeSystem(project, await mergedCatalog(env, user)), content); }
-    catch (err) { return json({ error: "prompt generation failed: " + (err.message || "unknown") }, 502); }
+    catch (err) { return json({ error: "prompt generation failed: " + (err.message || "unknown") }); }
   }
 
   // Optional Chinese step (default off for Venice).
@@ -84,7 +84,7 @@ export async function onRequestPost(context) {
       };
       const g = await artcraftGenerate(keys.artcraftBase, keys.artcraft, "video", opts.model || "multi_function/seedance_2p0", acBody);
       return json({ ok: true, stage: "queued", provider: "artcraft", job: g.job, promptYaml: yaml, promptChinese: yamlZh, note: imageUrl ? "Note: ArtCraft image-to-video reference upload is a follow-up; this used text-to-video." : null });
-    } catch (err) { return json({ error: "ArtCraft video failed: " + (err.message || "unknown"), promptYaml: yaml }, 502); }
+    } catch (err) { return json({ error: "ArtCraft video failed: " + (err.message || "unknown"), promptYaml: yaml }); }
   }
 
   if (provider === "venice" && !keys.venice) {
@@ -165,9 +165,9 @@ export async function onRequestPost(context) {
 
     return json({ ok: true, stage: "queued", provider, job: q.job, model: q.model, downloadUrl: q.downloadUrl, promptYaml: yaml, promptChinese: yamlZh, balanceUsd: q.balanceUsd, quoteUsd });
   } catch (err) {
-    return json({ error: "queue failed: " + (err.message || "unknown"), promptYaml: yaml }, 502);
+    return json({ error: "queue failed: " + (err.message || "unknown"), promptYaml: yaml });
   }
-  } catch (fatal) { return json({ error: "video failed: " + (fatal.message || "unknown") }, 500); }
+  } catch (fatal) { return json({ error: "video failed: " + (fatal.message || "unknown") }); }
 }
 
 export async function onRequestGet(context) {
@@ -181,7 +181,7 @@ export async function onRequestGet(context) {
 
   const user = userFromToken(token);
   const keys = await getKeys(env, user);
-  if (!keys.venice) return json({ error: "Venice not connected" }, 500);
+  if (!keys.venice) return json({ error: "Venice not connected" });
 
   try {
     const r = await veniceVideoRetrieve(keys.venice, job, model);
@@ -193,6 +193,6 @@ export async function onRequestGet(context) {
     }
     return json({ ok: true, status: r.status, url: r.done ? r.url : null, mediaId });
   } catch (err) {
-    return json({ error: "retrieve failed: " + (err.message || "unknown") }, 502);
+    return json({ error: "retrieve failed: " + (err.message || "unknown") });
   }
 }

@@ -34,7 +34,7 @@ export async function onRequestGet(context) {
     if (provider === "artcraft") return json({ ok: true, provider, type, models: artcraftModels(type) });
     return json({ error: "unknown provider" }, 400);
   } catch (err) {
-    return json({ error: err.message || "model detection failed" }, 502);
+    return json({ error: err.message || "model detection failed" });
   }
 }
 
