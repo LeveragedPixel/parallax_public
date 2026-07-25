@@ -443,7 +443,12 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
           <div class="gen-out" id="genOut"><div class="empty">Switch to Image or Video and write or generate below.</div></div>
         </div>
         <div class="genstage hide" id="spaceStage">
-          <div class="col-h"><span class="dot a"></span><b>Space</b><span class="chip">infinite board — drop images, drag the ＋ handle off one, prompt the change</span><div class="sp"></div>
+          <div class="col-h"><span class="dot a"></span><b>Space</b>
+            <select id="cvBoardSel" class="tbtn" style="padding:3px 8px;font-size:11px;max-width:170px" title="your boards — saved to your account, they follow you to any computer"></select>
+            <button class="tbtn" id="cvBoardNew" style="padding:4px 9px;font-size:11px" title="new board">＋</button>
+            <button class="tbtn" id="cvBoardRen" style="padding:4px 9px;font-size:11px" title="rename this board">✎</button>
+            <button class="tbtn" id="cvBoardDel" style="padding:4px 9px;font-size:11px" title="delete this board (its media stays in your gallery)">🗑</button>
+            <span class="chip">drop images anywhere · drag the ＋ handle off a node</span><div class="sp"></div>
             <input id="cvAddFile" type="file" accept="image/*" multiple style="display:none">
             <label for="cvAddFile" class="tbtn" style="padding:4px 10px;font-size:11px;cursor:pointer">+ Images</label>
             <button class="tbtn" id="cvAddTextBtn" style="padding:4px 10px;font-size:11px" title="a chat node — ask anything, then grow from the answer">+ Text</button>
@@ -545,6 +550,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>

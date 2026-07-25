@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 43; // v43: fixed empty-board hint, whole-canvas drops (incl. web images), generation boxes show only generation models
+const BUILD = 44; // v44: boards live in KV — named boards that follow the account to any computer
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1118,23 +1118,35 @@ async function sendSelectionToClaude() {
    Prompt nodes render on Venice (image = sync, video = queued + polled); text nodes
    chat over /api/chat with connected images seen and connected text remembered.
    Media persists in the KV gallery; the board keeps layout + ids in localStorage. */
-const CANVAS_KEY = "plx-canvas-v1";
-let cv = null, cvHydrated = false, cvDrag = null, cvLink = null, cvZ = 10, cvJustDragged = false, cvMenuEl = null;
+const CANVAS_KEY = "plx-canvas-v1";           // legacy per-browser board (migrated to KV once)
+const CANVAS_CACHE = "plx-canvas-cache";      // crash-safety copy of the current board
+const BOARD_LAST = "plx-board-last";          // last-open board id (per browser)
+let cv = null, cvDrag = null, cvLink = null, cvZ = 10, cvJustDragged = false, cvMenuEl = null;
+let cvBoardId = null, cvBoards = [], cvBoardsReady = false, cvKvTimer = null, cvPushPending = false;
 const cvEls = {};
 const cvId = () => "n_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-function cvLoad() {
-  if (cv) return;
-  try { cv = JSON.parse(localStorage.getItem(CANVAS_KEY) || "null"); } catch {}
-  if (!cv || !Array.isArray(cv.nodes)) cv = { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1 };
+function cvLoad() { if (!cv) cv = { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1 }; }
+// Slim a board for storage: layout + gallery ids + text only. Inline image data drops
+// out (it reloads from the gallery by id); a video's remote URL is kept, a data: URL is not.
+function cvSlim() {
+  return { ...cv, updatedAt: Date.now(), nodes: cv.nodes.map((n) => { const { dataUrl, src, busy, ...keep } = n; if (src && !/^data:/.test(src)) keep.src = src; return keep; }) };
 }
-// Persist layout only — image data drops out (reloads from the gallery by id); a video's
-// remote URL is kept, a data: URL is not.
+/* Boards live in KV (/api/boards) so they follow the account onto any computer.
+   Saves are debounced; a localStorage cache covers the debounce window if the tab
+   dies mid-save and is reconciled (newest wins) next time the board opens. */
 function cvSave() {
-  try {
-    const slim = { ...cv, nodes: cv.nodes.map((n) => { const { dataUrl, src, busy, ...keep } = n; if (src && !/^data:/.test(src)) keep.src = src; return keep; }) };
-    localStorage.setItem(CANVAS_KEY, JSON.stringify(slim));
-  } catch {}
+  const slim = cvSlim();
+  try { localStorage.setItem(cvBoardId ? CANVAS_CACHE : CANVAS_KEY, JSON.stringify(cvBoardId ? { id: cvBoardId, board: slim } : slim)); } catch {}
+  if (!cvBoardId) return;
+  cvPushPending = true;
+  clearTimeout(cvKvTimer);
+  cvKvTimer = setTimeout(cvFlush, 2000);
+}
+function cvFlush() {
+  if (!cvPushPending || !cvBoardId) return;
+  cvPushPending = false; clearTimeout(cvKvTimer);
+  api("/api/boards", { id: cvBoardId, board: cvSlim() }).catch(() => { cvPushPending = true; });
 }
 function cvView() { return $("cvView"); }
 function cvWorldPt(e) { const r = cvView().getBoundingClientRect(); return { x: (e.clientX - r.left - cv.pan.x) / cv.zoom, y: (e.clientY - r.top - cv.pan.y) / cv.zoom }; }
@@ -1639,14 +1651,11 @@ async function cvPollVideo(n, job, model, provider) {
   if (stat) stat.textContent = "still rendering — the clip will land in your gallery; drag it on when it's done";
 }
 
-/* ---- entering Space mode: hydrate persisted nodes ---- */
-function renderSpace() {
-  cvLoad(); cvApply(); cvEmptyUpd();
-  if (cvHydrated) return;
-  cvHydrated = true;
-  $("cvNodes").innerHTML = "";
+/* ---- boards: list / open / switch / migrate ---- */
+function cvRebuildAll() {
+  $("cvNodes").innerHTML = ""; for (const k in cvEls) delete cvEls[k];
   for (const n of cv.nodes) cvAddNodeEl(n);
-  cvDrawEdges();
+  cvApply(); cvDrawEdges(); cvEmptyUpd();
   for (const n of cv.nodes) {
     const needsImg = n.kind === "image" && !n.dataUrl && n.galleryId;
     const needsVid = n.kind === "video" && !n.src && n.galleryId;
@@ -1659,6 +1668,54 @@ function renderSpace() {
       })
       .catch(() => { const el = cvEls[n.id]; if (el) { const w = el.querySelector(".cvimgwrap"); if (w) w.innerHTML = '<div class="cvmissing">missing — deleted from gallery?</div>'; } });
   }
+}
+function cvNormalize(doc) {
+  const b = doc && typeof doc === "object" ? doc : {};
+  return { nodes: Array.isArray(b.nodes) ? b.nodes : [], edges: Array.isArray(b.edges) ? b.edges : [], pan: b.pan && typeof b.pan.x === "number" ? b.pan : { x: 60, y: 40 }, zoom: Number(b.zoom) || 1, updatedAt: b.updatedAt || 0 };
+}
+function cvBoardsUI() {
+  const sel = $("cvBoardSel"); if (!sel) return;
+  sel.innerHTML = "";
+  for (const b of cvBoards) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.name; if (b.id === cvBoardId) o.selected = true; sel.appendChild(o); }
+}
+async function cvOpenBoard(id) {
+  cvFlush();   // don't lose edits to the board we're leaving
+  let doc = null, name = "";
+  try { const d = await api("/api/boards?id=" + encodeURIComponent(id)); doc = d.board; name = d.name || ""; } catch {}
+  // Crash-safety reconcile: if the local cache for this board is newer, it wins.
+  try {
+    const c = JSON.parse(localStorage.getItem(CANVAS_CACHE) || "null");
+    if (c && c.id === id && c.board && (c.board.updatedAt || 0) > ((doc && doc.updatedAt) || 0)) { doc = c.board; api("/api/boards", { id, board: doc }).catch(() => {}); }
+  } catch {}
+  cvBoardId = id; cv = cvNormalize(doc);
+  try { localStorage.setItem(BOARD_LAST, id); } catch {}
+  cvBoardsUI(); cvRebuildAll();
+  return name;
+}
+async function cvBoardsInit() {
+  try { const d = await api("/api/boards"); cvBoards = d.boards || []; } catch { cvBoards = []; }
+  if (!cvBoards.length) {
+    // First run on this account: migrate the old per-browser board if it has anything,
+    // otherwise start fresh. Either way the account now owns "Board 1".
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(CANVAS_KEY) || "null"); } catch {}
+    const seed = legacy && Array.isArray(legacy.nodes) && legacy.nodes.length ? legacy : { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1 };
+    try {
+      const d = await api("/api/boards", { name: "Board 1", board: { ...seed, updatedAt: Date.now() } });
+      cvBoards = d.boards || []; if (legacy && seed === legacy) { toast("your board now lives in your account — it follows you to any computer"); localStorage.removeItem(CANVAS_KEY); }
+    } catch { toast("couldn't reach board storage — working locally for now"); cvLoad(); cvRebuildAll(); return; }
+  }
+  let last = ""; try { last = localStorage.getItem(BOARD_LAST) || ""; } catch {}
+  const openId = cvBoards.some((b) => b.id === last) ? last : cvBoards[0].id;
+  await cvOpenBoard(openId);
+}
+
+/* ---- entering Space mode ---- */
+function renderSpace() {
+  cvLoad(); cvApply(); cvEmptyUpd();
+  if (cvBoardsReady) return;
+  cvBoardsReady = true;
+  cvBoardsInit();
 }
 
 /* wire */
@@ -1794,6 +1851,33 @@ async function dropToAtts(dt, arr, render) {
   view.addEventListener("wheel", cvWheel, { passive: false });
   $("cvAddFile").onchange = (e) => { cvAddFiles(e.target.files); e.target.value = ""; };
   $("cvAddTextBtn").onclick = () => cvAddText();
+  /* boards: switcher + new/rename/delete; edits flush before leaving a board */
+  $("cvBoardSel").onchange = (e) => { if (e.target.value && e.target.value !== cvBoardId) cvOpenBoard(e.target.value); };
+  $("cvBoardNew").onclick = async () => {
+    const name = (prompt("New board name:") || "").trim() || ("Board " + (cvBoards.length + 1));
+    try { const d = await api("/api/boards", { name, board: { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1, updatedAt: Date.now() } }); cvBoards = d.boards || cvBoards; await cvOpenBoard(d.id); toast("board created"); }
+    catch { toast("couldn't create board"); }
+  };
+  $("cvBoardRen").onclick = async () => {
+    if (!cvBoardId) return;
+    const cur = cvBoards.find((b) => b.id === cvBoardId);
+    const name = (prompt("Rename board:", cur ? cur.name : "") || "").trim(); if (!name) return;
+    try { const d = await api("/api/boards", { id: cvBoardId, name }); cvBoards = d.boards || cvBoards; cvBoardsUI(); toast("renamed"); }
+    catch { toast("rename failed"); }
+  };
+  $("cvBoardDel").onclick = async () => {
+    if (!cvBoardId) return;
+    const cur = cvBoards.find((b) => b.id === cvBoardId);
+    if (!confirm(`Delete board “${cur ? cur.name : "this board"}”? Its images and clips stay in your gallery.`)) return;
+    try {
+      const d = await api("/api/boards?id=" + encodeURIComponent(cvBoardId), null, "DELETE");
+      cvBoards = d.boards || []; cvBoardId = null; cvPushPending = false;
+      if (!cvBoards.length) { const nd = await api("/api/boards", { name: "Board 1", board: { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1, updatedAt: Date.now() } }); cvBoards = nd.boards || []; }
+      await cvOpenBoard(cvBoards[0].id); toast("board deleted");
+    } catch { toast("delete failed"); }
+  };
+  window.addEventListener("pagehide", cvFlush);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") cvFlush(); });
   $("cvResetView").onclick = () => { cvLoad(); cv.pan = { x: 60, y: 40 }; cv.zoom = 1; cvApply(); cvSave(); };
   $("cvClear").onclick = () => {
     cvLoad();
