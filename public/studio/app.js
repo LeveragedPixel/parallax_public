@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 50; // v50: OpenAI is a first-class image API — GPT Image 2 direct with your OpenAI key, quality control included
+const BUILD = 51; // v51: resizable nodes, double-click to place blank nodes, Venice reference-to-video aspect fix
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1343,6 +1343,8 @@ function cvAddNodeEl(n) {
     el.querySelector(".cvgen").onclick = () => cvGenerate(n.id);
   }
   el.querySelector(".cvx").onclick = () => cvRemove(n.id);
+  const rz = document.createElement("div"); rz.className = "cvrz"; rz.title = "drag to resize";
+  el.appendChild(rz);
   cvSkillsRow(n, el);
   $("cvNodes").appendChild(el); cvEls[n.id] = el;
   return el;
@@ -1405,10 +1407,10 @@ function cvShowMenu(e, parent) {
   view.appendChild(m);
 }
 function cvSpawnChild(parent, kind, wp, extra) {
-  const n = { id: cvId(), kind, x: wp.x, y: wp.y - 50, parentId: parent.id, text: "", skills: (parent.skills || []).slice(), ...extra };
+  const n = { id: cvId(), kind, x: wp.x, y: wp.y - 50, parentId: parent ? parent.id : null, text: "", skills: parent && parent.skills ? parent.skills.slice() : [], ...extra };
   if (kind === "prompt") { n.w = 320; n.aspect = extra.out === "video" ? "16:9" : "1:1"; }
   if (kind === "text") n.w = 340;
-  cv.nodes.push(n); cv.edges.push({ from: parent.id, to: n.id });
+  cv.nodes.push(n); if (parent) cv.edges.push({ from: parent.id, to: n.id });
   cvSave();
   const el = cvAddNodeEl(n); el.style.zIndex = ++cvZ; cvDrawEdges(); cvEmptyUpd();
   const ta = el.querySelector(".cvtext"); if (ta) ta.focus();
@@ -1420,6 +1422,12 @@ function cvPointerDown(e) {
   if (cvMenuEl && !e.target.closest(".cvmenu")) cvHideMenu();
   if (e.target.closest(".cvmenu")) return;
   const nodeEl = e.target.closest(".cvnode");
+  if (e.target.classList.contains("cvrz") && nodeEl) {
+    const n = cvNode(nodeEl.dataset.id); if (!n) return;
+    nodeEl.style.zIndex = ++cvZ;
+    cvDrag = { rz: n, moved: false };
+    e.preventDefault(); return;
+  }
   if (e.target.classList.contains("cvport") && nodeEl) {
     const n = cvNode(nodeEl.dataset.id);
     if (n) { cvLink = { from: n }; e.preventDefault(); }
@@ -1437,6 +1445,12 @@ function cvPointerDown(e) {
 function cvPointerMove(e) {
   if (cvLink) { cvDrawEdges({ a: cvAnchor(cvLink.from, "r"), b: cvWorldPt(e) }); return; }
   if (!cvDrag) return;
+  if (cvDrag.rz) {
+    const p = cvWorldPt(e);
+    cvDrag.rz.w = Math.round(Math.max(180, Math.min(820, p.x - cvDrag.rz.x)));
+    const el = cvEls[cvDrag.rz.id]; if (el) el.style.width = cvDrag.rz.w + "px";
+    cvDrag.moved = true; cvDrawEdges(); return;
+  }
   if (cvDrag.pan) { cv.pan.x = cvDrag.px + (e.clientX - cvDrag.sx); cv.pan.y = cvDrag.py + (e.clientY - cvDrag.sy); cvApply(); return; }
   const p = cvWorldPt(e);
   cvDrag.n.x = p.x - cvDrag.dx; cvDrag.n.y = p.y - cvDrag.dy; cvDrag.moved = true;
@@ -1642,10 +1656,11 @@ async function cvGenerate(nid) {
         if (ok !== count && lastErr) stat.title = String(lastErr.message || lastErr);
       }
     } else {
-      const req = { brief: text || "animate the source", prewritten: prompt, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p" } };
+      // aspect always rides along: video.js drops it for first-frame i2v (Venice rejects it
+      // there) but reference-to-video and text-to-video REQUIRE it (Venice 400s without it).
+      const req = { brief: text || "animate the source", prewritten: prompt, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p", aspect_ratio: n.aspect || "16:9" } };
       if (src.att) req.images = [{ media_type: src.att.media_type, data: src.att.data }];
       else if (src.videoNode && src.videoNode.src && !/^data:/.test(src.videoNode.src)) req.videos = [{ url: src.videoNode.src, duration: src.videoNode.duration || 0 }];
-      else req.options.aspect_ratio = n.aspect || "16:9";   // text-to-video only: image/clip sources set their own
       await cvVideoSubmit(n, req);
     }
   } catch (e) {
@@ -1929,6 +1944,12 @@ async function dropToAtts(dt, arr, render) {
   window.addEventListener("pointermove", cvPointerMove);
   window.addEventListener("pointerup", cvPointerUp);
   view.addEventListener("wheel", cvWheel, { passive: false });
+  // double-click empty canvas -> place a blank node (Image gen / Video gen / Text chat)
+  view.addEventListener("dblclick", (e) => {
+    cvLoad();
+    if (e.target.closest(".cvnode") || e.target.closest(".cvmenu")) return;
+    cvShowMenu(e, null);
+  });
   $("cvAddFile").onchange = (e) => { cvAddFiles(e.target.files); e.target.value = ""; };
   $("cvAddTextBtn").onclick = () => cvAddText();
   /* boards: switcher + new/rename/delete; edits flush before leaving a board */
