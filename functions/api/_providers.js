@@ -64,13 +64,19 @@ export async function veniceImage(key, params) {
   try {
     res = await fetch(`${VENICE}/image/generate`, {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(params),
-      signal: AbortSignal.timeout(75000),
+      signal: AbortSignal.timeout(95000),
     });
   } catch (e) {
-    throw new Error(`Venice image ${e.name === "TimeoutError" ? "timed out (75s) — this model can't finish a render inside the serverless window; use a faster model for drafts (SD 3.5 etc.) and save the heavy one for finals" : "unreachable"} — ${e.message || e.name}`);
+    throw new Error(`Venice image ${e.name === "TimeoutError" ? "timed out (95s) — this model can't finish this render even at Venice's own limit; use a faster model for drafts (SD 3.5 etc.), or try ×1 at 1:1" : "unreachable"} — ${e.message || e.name}`);
   }
   const usd = res.headers.get("x-venice-balance-usd");
-  if (!res.ok) throw new Error(`Venice image ${res.status}: ${(await res.text()).slice(0, 180)}`);
+  if (!res.ok) {
+    const t = await res.text();
+    // Venice's own edge returns an HTML error page when a render outlives THEIR limit —
+    // translate it instead of dumping markup into the node status.
+    if (/^\s*</.test(t)) throw new Error(`Venice's servers gave up (${res.status}) before the render finished — this model/size can't be delivered by Venice's synchronous API. Use a faster model, ×1, or a smaller aspect.`);
+    throw new Error(`Venice image ${res.status}: ${t.slice(0, 180)}`);
+  }
   const d = await res.json();
   return { images: d.images || [], id: d.id || null, balanceUsd: usd != null ? Number(usd) : null };
 }

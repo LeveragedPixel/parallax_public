@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 48; // v48: generation errors return HTTP 200 {error} so Cloudflare can't swap them for its HTML page
+const BUILD = 49; // v49: image guard at 95s (Venice's own ceiling) + Venice edge errors translated to plain language
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1155,7 +1155,7 @@ const CANVAS_KEY = "plx-canvas-v1";           // legacy per-browser board (migra
 const CANVAS_CACHE = "plx-canvas-cache";      // crash-safety copy of the current board
 const BOARD_LAST = "plx-board-last";          // last-open board id (per browser)
 let cv = null, cvDrag = null, cvLink = null, cvZ = 10, cvJustDragged = false, cvMenuEl = null;
-let cvBoardId = null, cvBoards = [], cvBoardsReady = false, cvKvTimer = null, cvPushPending = false;
+let cvBoardId = null, cvBoards = [], cvBoardsReady = false, cvBoardsPromise = null, cvKvTimer = null, cvPushPending = false;
 const cvEls = {};
 const cvId = () => "n_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -1458,7 +1458,7 @@ function cvWheel(e) {
 /* ---- adding media to the board ---- */
 function cvCenter() { const r = cvView().getBoundingClientRect(); return { x: (r.width / 2 - cv.pan.x) / cv.zoom - 140, y: (r.height / 2 - cv.pan.y) / cv.zoom - 100 }; }
 async function cvAddImage(dataUrl, galleryId, x, y) {
-  cvLoad();
+  await cvWhenReady(); cvLoad();
   const n = { id: cvId(), kind: "image", x, y, w: 280, galleryId: galleryId || null, dataUrl };
   cv.nodes.push(n); cvSave(); cvAddNodeEl(n); cvDrawEdges(); cvEmptyUpd();
   if (!galleryId && dataUrl) {
@@ -1473,8 +1473,8 @@ function cvAddVideo(src, galleryId, x, y, parentId) {
   cvSave(); cvAddNodeEl(n); cvDrawEdges(); cvEmptyUpd();
   return n;
 }
-function cvAddText(at) {
-  cvLoad();
+async function cvAddText(at) {
+  await cvWhenReady(); cvLoad();
   const p = at || cvCenter();
   const n = { id: cvId(), kind: "text", x: p.x, y: p.y, w: 340, text: "" };
   cv.nodes.push(n); cvSave();
@@ -1772,8 +1772,11 @@ function renderSpace() {
   cvLoad(); cvApply(); cvEmptyUpd();
   if (cvBoardsReady) return;
   cvBoardsReady = true;
-  cvBoardsInit();
+  cvBoardsPromise = cvBoardsInit();
 }
+// Anything that ADDS to the board must wait for the account board to finish opening —
+// otherwise the load replaces cv and wipes the just-added node (race on first entry).
+async function cvWhenReady() { if (cvBoardsPromise) { try { await cvBoardsPromise; } catch {} } }
 
 /* wire */
 // Single self-contained file now (JS inlined into index.html), so one version marker.
