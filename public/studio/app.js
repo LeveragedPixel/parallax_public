@@ -2,15 +2,15 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 52; // v52: drag-off handle visible on ALL nodes (chat→image/video), sane resize minimums, bounded text areas
+const BUILD = 53; // v53: Space-first — one stage, collapsible Dual Mind chat panel, Projects popover, no Image/Video tabs
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
 const MODEL_KEYS = { claude: "plx-model-claude", gpt: "plx-model-gpt" };
 
 let token = localStorage.getItem(TOKEN_KEY) || "";
-let projects = [], mode = "chat", editingId = null;
-let openCols = [], colConvos = {}, activeGenId = null, activeColId = null;
+let projects = [], editingId = null;
+let colConvos = {};
 const loadedConvos = new Set(), saveTimers = {}; // conversation persistence (per-project threads)
 // Hydrate a project's saved thread from KV (once). Won't clobber in-memory turns.
 async function loadConvo(id) {
@@ -33,21 +33,7 @@ function saveConvo(id) {
   saveTimers[id] = setTimeout(() => { api("/api/conversations", { projectId: id, messages: trimForSave(colConvos[id]) }).catch(() => {}); }, 400);
 }
 let laneOn = JSON.parse(localStorage.getItem("plx-lanes") || '{"claude":true,"gpt":true}');
-/* v36: ONE chat composer at the bottom. It sends to the highlighted (active) column. */
-let chatAtts = [], chatBusy = false;
-function renderChatAtts() {
-  const box = $("chatAtts"); if (!box) return; box.innerHTML = "";
-  chatAtts.forEach((a, i) => { const el = document.createElement("div"); el.className = "att"; el.innerHTML = `<img src="${a.dataUrl}"><button class="x">✕</button>`; el.querySelector(".x").onclick = () => { chatAtts.splice(i, 1); renderChatAtts(); }; box.appendChild(el); });
-}
-function chatTargetName() {
-  if (!activeColId || activeColId === "__raw") return "Raw dual chat";
-  const p = projects.find((x) => x.id === activeColId); return p ? p.name : "Raw dual chat";
-}
-function updateChatTarget() {
-  const el = $("chatTarget"); if (el) el.textContent = "→ " + chatTargetName();
-  document.querySelectorAll(".col").forEach((c) => c.classList.toggle("active", c.dataset.id === activeColId));
-}
-let genModelsCache = {}, veniceUsd = null, sessionSpend = 0, genAtts = [], genAudio = null, genVidRefs = []; // genVidRefs: video-to-video references
+let genModelsCache = {}, veniceUsd = null, sessionSpend = 0;
 let artcraftCredits = null, artcraftState = "off"; // off | connected | blocked
 let lastGenCost = null;
 let galTab = "image", galMedia = [], galSel = {}, galFolded = {}; // gallery: tab, cached index, selection map, collapsed folders
@@ -89,43 +75,6 @@ async function collectImages(files, arr, render) {
   }
   render();
 }
-function renderGenAtts() {
-  const box = $("genAtts"); box.innerHTML = "";
-  genAtts.forEach((a, i) => { const el = document.createElement("div"); el.className = "att"; el.innerHTML = `<img src="${a.dataUrl}"><button class="x">✕</button>`; el.querySelector(".x").onclick = () => { genAtts.splice(i, 1); renderGenAtts(); }; box.appendChild(el); });
-}
-
-// Attach a song → transcribe its lyrics (OpenAI Whisper, server-side) so the prompt can be
-// written FROM the lyrics. The transcript is editable — singing transcription isn't perfect.
-async function attachAudio(file) {
-  if (!file) return;
-  if (!/^audio\//.test(file.type) && !/\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(file.name)) { toast("pick an audio file"); return; }
-  if (file.size > 25 * 1024 * 1024) { toast(file.name + ": too large (max 25MB)"); return; }
-  genAudio = { name: file.name, lyrics: "", status: "transcribing" }; renderAudio();
-  try {
-    const fd = new FormData(); fd.append("file", file);
-    const r = await fetch("/api/transcribe", { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
-    const d = await r.json();
-    if (!d.ok) { toast(d.error || "transcription failed"); genAudio = null; renderAudio(); return; }
-    genAudio = { name: file.name, lyrics: d.text || "", status: "done", open: true }; renderAudio();
-    toast(d.text ? "lyrics captured — edit if needed" : "no lyrics detected");
-  } catch (e) { toast("transcribe failed: " + (e.message || e)); genAudio = null; renderAudio(); }
-}
-function renderAudio() {
-  const box = $("genAudioBox"); if (!box) return;
-  if (!genAudio) { box.innerHTML = ""; box.style.display = "none"; return; }
-  box.style.display = "block";
-  const busy = genAudio.status === "transcribing";
-  box.innerHTML = `<div class="audiochip">
-    <span class="mus">🎵</span><span class="nm">${esc(genAudio.name)}</span>
-    <span class="st">${busy ? "transcribing…" : "lyrics ✓"}</span>
-    <button class="tgl" ${busy ? "disabled" : ""}>${genAudio.open ? "hide lyrics" : "lyrics"}</button>
-    <button class="x2">✕</button></div>
-    <textarea class="lyr ${genAudio.open && !busy ? "" : "hide"}" placeholder="transcribed lyrics — edit to taste">${esc(genAudio.lyrics)}</textarea>`;
-  const ta = box.querySelector(".lyr"); if (ta) ta.oninput = () => { genAudio.lyrics = ta.value; };
-  box.querySelector(".x2").onclick = () => { genAudio = null; renderAudio(); };
-  const tgl = box.querySelector(".tgl"); if (tgl) tgl.onclick = () => { genAudio.open = !genAudio.open; renderAudio(); };
-}
-
 /* --- voice input: record the mic -> transcribe -> insert into a textarea (reuses /api/transcribe) --- */
 let activeRec = null;
 function setMicState(btn, state) {
@@ -158,7 +107,6 @@ async function toggleMic(ta, btn) {
   activeRec = { rec, stream, btn, ta }; setMicState(btn, "recording"); rec.start();
 }
 function clearEmpty(el) { const e = el.querySelector(".empty"); if (e) e.remove(); }
-const activeGenProject = (type) => { const p = projects.find((x) => x.id === activeGenId); return p && p.type === type ? p : null; };
 
 /* theme + meters */
 function initTheme() {
@@ -267,29 +215,75 @@ async function showApp() {
   hide("login"); show("app"); $("operator").textContent = "operator: " + userFromToken(token);
   applyLaneToggles();
   await Promise.all([loadProjects(), loadModels()]);
-  // Restore the columns that were open, plus each thread's saved conversation, so a refresh
-  // or re-login lands you right back where you were.
-  try { const saved = JSON.parse(localStorage.getItem("plx-cols") || "[]"); openCols = saved.filter((id) => projects.some((p) => p.id === id)).slice(0, 3); } catch { openCols = []; }
-  await Promise.all([...openCols, "__raw"].map(loadConvo));
-  setMode("chat"); loadCredits(); loadStatus(); loadBalances();
+  toggleChatPanel(localStorage.getItem("plx-chat-open") !== "0");
+  await setThread(chatThread);
+  renderSpace();
+  loadCredits(); loadStatus(); loadBalances();
 }
 
-/* modes */
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
-  document.querySelectorAll(".lanetog").forEach((b) => (b.style.display = m === "chat" ? "" : "none"));
-  const chat = m === "chat", space = m === "space";
-  $("modelBar").classList.toggle("hide", !chat);
-  $("cols").classList.toggle("hide", !chat);
-  $("genStage").classList.toggle("hide", chat || space);
-  $("genDock").classList.toggle("hide", chat || space);
-  const sp = $("spaceStage"); if (sp) sp.classList.toggle("hide", !space);
-  const cd = $("chatDock"); if (cd) cd.classList.toggle("hide", !chat);
-  if (chat) renderChat(); else if (space) renderSpace(); else renderGenView(m);
+/* ---- Dual Mind panel (v53): one collapsible chat thread on the left; Space is the stage ---- */
+let chatThread = localStorage.getItem("plx-thread") || "__raw";
+let chatAtts = [], chatBusy = false;
+function renderChatAtts() {
+  const box = $("chatAtts"); if (!box) return; box.innerHTML = "";
+  chatAtts.forEach((a, i) => { const el = document.createElement("div"); el.className = "att"; el.innerHTML = `<img src="${a.dataUrl}"><button class="x">✕</button>`; el.querySelector(".x").onclick = () => { chatAtts.splice(i, 1); renderChatAtts(); }; box.appendChild(el); });
 }
-
-/* lane toggles (which minds answer inside a column) */
+function chatPanelOpen() { return !$("chatPanel").classList.contains("hide"); }
+function toggleChatPanel(force) {
+  const open = force != null ? force : !chatPanelOpen();
+  $("chatPanel").classList.toggle("hide", !open);
+  $("chatToggle").classList.toggle("on", open);
+  try { localStorage.setItem("plx-chat-open", open ? "1" : "0"); } catch {}
+}
+function fillThreadSel() {
+  const sel = $("chatThreadSel"); if (!sel) return;
+  sel.innerHTML = "";
+  const opts = [{ id: "__raw", name: "Raw dual chat" }, ...projects.filter((p) => p.type === "chat")];
+  for (const o of opts) { const op = document.createElement("option"); op.value = o.id; op.textContent = o.name; sel.appendChild(op); }
+  if (!opts.some((o) => o.id === chatThread)) chatThread = "__raw";
+  sel.value = chatThread;
+}
+async function setThread(id) {
+  chatThread = id; try { localStorage.setItem("plx-thread", id); } catch {}
+  fillThreadSel();
+  await loadConvo(id);
+  renderPanelStream();
+}
+function renderPanelStream() {
+  const el = $("panelStream"); if (!el) return;
+  const conv = colConvos[chatThread] || [];
+  if (!conv.length) { el.innerHTML = '<div class="empty">Both minds answer here, stacked.<br><br>Brainstorm in the panel — build it on the board →</div>'; return; }
+  el.innerHTML = ""; for (const t of conv) el.appendChild(bubbleFor(t));
+  el.scrollTop = el.scrollHeight;
+}
+async function panelSend(collab) {
+  if (chatBusy) return;
+  const ta = $("chatText"); const text = ta.value.trim();
+  const atts = chatAtts.slice();
+  if (!text && !atts.length) return;
+  chatBusy = true; const st = $("chatStatus"); st.textContent = collab ? "collaborating…" : "streaming…"; ta.value = "";
+  chatAtts = []; renderChatAtts();
+  const streamEl = $("panelStream");
+  if (!(colConvos[chatThread] || []).length) streamEl.innerHTML = "";
+  clearEmpty(streamEl);
+  const turn = { who: "user", text, images: atts.map((a) => ({ media_type: a.media_type, data: a.data })), thumbs: atts.map((a) => a.dataUrl) };
+  colConvos[chatThread] = colConvos[chatThread] || []; colConvos[chatThread].push(turn);
+  streamEl.appendChild(bubbleFor(turn)); streamEl.scrollTop = streamEl.scrollHeight;
+  try {
+    const both = laneOn.claude && laneOn.gpt;
+    if (collab && both) {
+      await streamCol("claude", $("mClaude").value, chatThread, streamEl);
+      const last = [...colConvos[chatThread]].reverse().find((t) => t.who === "claude");
+      const extra = last ? `Claude (the other mind) responded:\n\n${last.text}\n\nGive your own take — agree, disagree, or build on it.` : null;
+      await streamCol("gpt", $("mGpt").value, chatThread, streamEl, extra);
+    } else {
+      const jobs = [];
+      if (laneOn.claude) jobs.push(streamCol("claude", $("mClaude").value, chatThread, streamEl));
+      if (laneOn.gpt) jobs.push(streamCol("gpt", $("mGpt").value, chatThread, streamEl));
+      await Promise.all(jobs);
+    }
+  } finally { chatBusy = false; st.textContent = ""; saveConvo(chatThread); }
+}
 function applyLaneToggles() {
   $("togClaude").classList.toggle("on", laneOn.claude); $("togClaude").classList.toggle("off", !laneOn.claude);
   $("togGpt").classList.toggle("on", laneOn.gpt); $("togGpt").classList.toggle("off", !laneOn.gpt);
@@ -316,34 +310,31 @@ async function fillModels(provider, selId, stateId) {
 }
 
 /* projects */
-async function loadProjects() { const d = await api("/api/projects"); projects = d.projects || []; $("pcount").textContent = projects.length; renderProjects(); }
+async function loadProjects() { const d = await api("/api/projects"); projects = d.projects || []; renderProjects(); }
 function renderProjects() {
-  const box = $("plist"); box.innerHTML = "";
-  if (!projects.length) box.innerHTML = '<div class="empty" style="margin:8px 0">No projects. Add a skill or + New.</div>';
+  fillThreadSel();
+  const cnt = $("projCount"); if (cnt) cnt.textContent = projects.length;
+  const box = $("projList"); if (!box) return; box.innerHTML = "";
+  if (!projects.length) { box.innerHTML = '<div class="empty" style="margin:14px 0">No projects yet — create one, or add a skill from the library.</div>'; return; }
   for (const p of projects) {
-    const on = openCols.includes(p.id) || activeGenId === p.id;
-    const el = document.createElement("div"); el.className = "pitem" + (on ? " on" : "");
+    const el = document.createElement("div"); el.className = "pitem" + (p.id === chatThread ? " on" : "");
     el.innerHTML = `<span class="nm">${esc(p.name)}</span><span class="badge t">${p.type}</span>` + (p.author ? `<span class="badge author">${esc(p.author)}</span>` : "");
-    el.onclick = async () => {
-      if (p.type === "chat") {
-        if (openCols.includes(p.id)) openCols = openCols.filter((x) => x !== p.id);
-        else if (openCols.length >= 3) { toast("max 3 columns"); } else { openCols.push(p.id); await loadConvo(p.id); }
-        renderProjects(); setMode("chat");
-      } else { activeGenId = p.id; renderProjects(); setMode(p.type); }
+    el.title = p.type === "chat" ? "open this thread in the Dual Mind panel" : "legacy " + p.type + " project — generation lives on the board now";
+    el.onclick = async () => { if (p.type !== "chat") { toast("legacy " + p.type + " project — generation lives on the board now"); return; } hide("projModal"); toggleChatPanel(true); await setThread(p.id); };
+    const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "rename / edit";
+    ed.onclick = (e) => { e.stopPropagation(); hide("projModal"); openEdit(p); };
+    const x = document.createElement("button"); x.className = "x"; x.textContent = "🗑"; x.title = "delete project";
+    x.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete “${p.name}”? Its saved conversation goes too; gallery media stays.`)) return;
+      await api("/api/projects?id=" + p.id, null, "DELETE");
+      api("/api/conversations?projectId=" + p.id, null, "DELETE").catch(() => {});
+      delete colConvos[p.id]; loadedConvos.delete(p.id);
+      if (chatThread === p.id) await setThread("__raw");
+      await loadProjects(); toast("project deleted");
     };
-    const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "edit";
-    ed.onclick = (e) => { e.stopPropagation(); openEdit(p); };
-    const x = document.createElement("button"); x.className = "x"; x.textContent = "✕";
-    x.onclick = (e) => { e.stopPropagation(); confirmDelete(p, el); };
     el.appendChild(ed); el.appendChild(x); box.appendChild(el);
   }
-}
-function confirmDelete(p, el) {
-  el.innerHTML = `<span class="nm">delete “${esc(p.name)}”?</span>`;
-  const yes = document.createElement("button"); yes.className = "x"; yes.textContent = "✓"; yes.style.color = "var(--red)";
-  const no = document.createElement("button"); no.className = "x"; no.textContent = "✗";
-  yes.onclick = async (e) => { e.stopPropagation(); await api("/api/projects?id=" + p.id, null, "DELETE"); api("/api/conversations?projectId=" + p.id, null, "DELETE").catch(() => {}); delete colConvos[p.id]; loadedConvos.delete(p.id); openCols = openCols.filter((x) => x !== p.id); if (activeGenId === p.id) activeGenId = null; await loadProjects(); if (mode === "chat") renderChat(); };
-  no.onclick = (e) => { e.stopPropagation(); renderProjects(); }; el.appendChild(yes); el.appendChild(no);
 }
 function openEdit(p) { editingId = p.id; $("npName").value = p.name; $("npType").value = p.type; $("npInstr").value = p.instructions || ""; $("npTitle").textContent = "EDIT PROJECT"; fillNpSkills(p.attachedSkills || []); show("npModal"); }
 
@@ -372,48 +363,11 @@ async function saveNP() {
   if (!body.name) { toast("name required"); return; }
   if (editingId) body.id = editingId;
   const d = await api("/api/projects", body);
-  if (d.ok) { hide("npModal"); editingId = null; await loadProjects(); if (mode === "chat") renderChat(); toast(wasEdit ? "Saved" : "Project created"); }
+  if (d.ok) { hide("npModal"); editingId = null; await loadProjects(); toast(wasEdit ? "Saved" : "Project created"); }
   else toast(d.error || "failed");
 }
 
-/* chat columns */
-function renderChat() {
-  try { localStorage.setItem("plx-cols", JSON.stringify(openCols.slice(0, 3))); } catch {}
-  const cols = $("cols"); cols.innerHTML = "";
-  const ids = openCols.length ? openCols.slice(0, 3) : ["__raw"];
-  if (!ids.includes(activeColId)) activeColId = ids[0];
-  for (const id of ids) cols.appendChild(buildColumn(id));
-  updateChatTarget();
-}
-function buildColumn(id) {
-  const proj = id === "__raw" ? null : projects.find((p) => p.id === id);
-  const sec = document.createElement("section"); sec.className = "col"; sec.dataset.id = id;
-  const name = proj ? proj.name : "Raw dual chat";
-  sec.innerHTML =
-    `<div class="col-h"><span class="dot a"></span><span class="dot c"></span><b>${esc(name)}</b>` +
-    (proj ? `<span class="badge author">${esc(proj.author || "")}</span>` : "") +
-    `<div class="sp"></div>${id !== "__raw" ? '<button class="x" title="close column">✕</button>' : ""}</div>` +
-    `<div class="stream" id="stream-${id}"></div>`;
-  const streamEl = sec.querySelector(".stream"); renderColStream(id, streamEl);
-  // v36: no per-column composer. Clicking a column targets the single bottom composer at it.
-  sec.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".col-h .x")) return;
-    if (activeColId !== id) { activeColId = id; updateChatTarget(); }
-  });
-  // Drops still land on the column: gallery media routes to chat; files become composer attachments.
-  sec.addEventListener("dragenter", (e) => { e.preventDefault(); sec.classList.add("dragover"); });
-  sec.addEventListener("dragover", (e) => { e.preventDefault(); });
-  sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) sec.classList.remove("dragover"); });
-  sec.addEventListener("drop", async (e) => {
-    e.preventDefault(); e.stopPropagation(); sec.classList.remove("dragover");
-    activeColId = id; updateChatTarget();
-    const plx = e.dataTransfer.getData("application/x-plx-media");
-    if (plx) { try { await routeMediaTo("chat", JSON.parse(plx)); return; } catch {} }
-    await dropToAtts(e.dataTransfer, chatAtts, renderChatAtts);
-  });
-  const cx = sec.querySelector(".col-h .x"); if (cx) cx.onclick = () => { openCols = openCols.filter((x) => x !== id); renderProjects(); renderChat(); };
-  return sec;
-}
+/* chat bubbles (shared by the Dual Mind panel and board text nodes) */
 function bubbleFor(t) {
   const w = document.createElement("div");
   if (t.who === "user") {
@@ -422,38 +376,6 @@ function bubbleFor(t) {
     w.innerHTML = `<div class="who">YOU</div><div class="bub">${esc(t.text)}${thumbs}</div>`;
   } else { w.className = "msg " + t.who; w.innerHTML = `<div class="who">${t.who === "claude" ? "CLAUDE" : "CHATGPT"} <button class="copybtn">COPY</button></div><div class="bub">${esc(t.text)}</div>`; w.querySelector(".copybtn").onclick = () => copyText(t.text); }
   return w;
-}
-function renderColStream(id, streamEl) {
-  const conv = colConvos[id] || [];
-  if (!conv.length) { streamEl.innerHTML = '<div class="empty">Ask — both minds answer here, stacked.</div>'; return; }
-  streamEl.innerHTML = ""; for (const t of conv) streamEl.appendChild(bubbleFor(t)); streamEl.scrollTop = streamEl.scrollHeight;
-}
-async function sendCol(id, collab) {
-  if (chatBusy) return;
-  const sec = document.querySelector(`.col[data-id="${CSS.escape(id)}"]`); if (!sec) return;
-  const ta = $("chatText"); const text = ta.value.trim();
-  const atts = chatAtts.slice();
-  if (!text && !atts.length) return;
-  chatBusy = true; const st = $("chatStatus"); st.textContent = collab ? "collaborating…" : "streaming…"; ta.value = "";
-  chatAtts = []; renderChatAtts();
-  const streamEl = sec.querySelector(".stream"); clearEmpty(streamEl);
-  const turn = { who: "user", text, images: atts.map((a) => ({ media_type: a.media_type, data: a.data })), thumbs: atts.map((a) => a.dataUrl) };
-  colConvos[id] = colConvos[id] || []; colConvos[id].push(turn);
-  streamEl.appendChild(bubbleFor(turn)); streamEl.scrollTop = streamEl.scrollHeight;
-  try {
-    const both = laneOn.claude && laneOn.gpt;
-    if (collab && both) {
-      await streamCol("claude", $("mClaude").value, id, streamEl);
-      const last = [...colConvos[id]].reverse().find((t) => t.who === "claude");
-      const extra = last ? `Claude (the other mind) responded:\n\n${last.text}\n\nGive your own take — agree, disagree, or build on it.` : null;
-      await streamCol("gpt", $("mGpt").value, id, streamEl, extra);
-    } else {
-      const jobs = [];
-      if (laneOn.claude) jobs.push(streamCol("claude", $("mClaude").value, id, streamEl));
-      if (laneOn.gpt) jobs.push(streamCol("gpt", $("mGpt").value, id, streamEl));
-      await Promise.all(jobs);
-    }
-  } finally { chatBusy = false; st.textContent = ""; saveConvo(id); }
 }
 async function streamCol(provider, model, id, streamEl, extraUser) {
   const w = document.createElement("div"); w.className = "msg " + provider;
@@ -543,10 +465,10 @@ async function showInfo(s) {
 }
 async function addSkill(s) {
   const d = await api("/api/skills", { skillId: s.id });
-  if (d.ok) { await loadProjects(); if (d.project.type === "chat") { if (!openCols.includes(d.project.id)) openCols.push(d.project.id); } else activeGenId = d.project.id; renderProjects(); setMode(d.project.type); toast(`Added “${s.name}”`); openSkills(); }
+  if (d.ok) { await loadProjects(); if (d.project.type === "chat") { toggleChatPanel(true); await setThread(d.project.id); } toast(`Added “${s.name}”`); openSkills(); }
   else toast(d.error || "add failed");
 }
-async function removeSkill(p) { await api("/api/projects?id=" + p.id, null, "DELETE"); openCols = openCols.filter((x) => x !== p.id); await loadProjects(); if (mode === "chat") renderChat(); openSkills(); toast("Removed"); }
+async function removeSkill(p) { await api("/api/projects?id=" + p.id, null, "DELETE"); await loadProjects(); if (chatThread === p.id) await setThread("__raw"); openSkills(); toast("Removed"); }
 
 /* connections */
 async function openConnections() {
@@ -565,50 +487,7 @@ async function saveProviderKey(provider, inputId) {
   if (d.ok) { $(inputId).value = ""; toast(provider + " key saved"); openConnections(); if (provider === "anthropic" || provider === "openai") loadModels(); loadStatus(); } else toast(d.error || "save failed");
 }
 
-/* generation */
-function renderGenView(type) {
-  const p = activeGenProject(type);
-  $("genTitle").textContent = type.toUpperCase() + " · " + (p ? p.name : "raw (open a matching project for tuned prompts)");
-  $("genRefWrap").classList.toggle("hide", type !== "video");
-  const provSel = $("genProvider"); provSel.innerHTML = '<option value="venice">Venice</option><option value="artcraft">ArtCraft</option>';
-  provSel.value = (p && p.settings && p.settings.provider) || "venice";
-  provSel.onchange = () => fillGenModels(type);
-  buildGenOpts(type); fillGenModels(type); loadCredits();
-  $("genOut").innerHTML = '<div class="empty">✎ Write a prompt to copy · ↯ Generate to call the API. Output saves to your gallery.</div>';
-  $("genBrief").value = ""; genAtts = []; renderGenAtts();
-  genVidRefs = []; renderVidRefs();
-  const vidOnly = type === "video";
-  if ($("genVidWrap")) $("genVidWrap").classList.toggle("hide", !vidOnly);
-  if ($("genNegWrap")) $("genNegWrap").classList.toggle("hide", !vidOnly);
-  if ($("genNeg")) $("genNeg").value = "";
-}
-function buildGenOpts(type) {
-  const box = $("genOpts");
-  if (type === "image") box.innerHTML = optSel("optFormat", "FORMAT", ["webp", "png", "jpeg"]) + optSel("optAspect", "ASPECT", ["1:1", "16:9", "9:16", "4:3", "3:2"]) + optSel("optVariants", "COUNT", ["1", "2", "3", "4"]);
-  else box.innerHTML = optSel("optDuration", "DURATION", ["5s", "10s", "15s"]) + optSel("optResolution", "RES", ["1080p", "720p", "480p"]) + optSel("optAspectV", "ASPECT", ["16:9", "9:16", "1:1"]) + `<div class="f"><label>AUDIO</label><label class="tgl"><input type="checkbox" id="optAudio" checked><span>generate</span></label></div>`;
-}
-function optSel(id, label, vals) { return `<div class="f"><label>${label}</label><select id="${id}">` + vals.map((v) => `<option value="${v}">${v}</option>`).join("") + "</select></div>"; }
-async function fillGenModels(type) {
-  const prov = $("genProvider").value, sel = $("genModel"), st = $("genModelState"); st.textContent = "…"; sel.innerHTML = ""; const ck = prov + ":" + type;
-  try {
-    let models = genModelsCache[ck];
-    if (!models) { const d = await api(`/api/models?provider=${prov}&type=${type}`); models = d.models || []; genModelsCache[ck] = models; if (d.note) st.dataset.note = d.note; }
-    for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.label || m.id; sel.appendChild(o); }
-    const p = activeGenProject(type); const want = p && p.settings && p.settings.model; if (want) sel.value = want;
-    st.textContent = models.length ? models.length + (models.length === 1 ? " model" : " models") : (st.dataset.note || "none");
-    st.title = models.length + " generation models available from this provider";
-  } catch (e) { st.textContent = String(e.message || e).slice(0, 20); }
-}
-function collectGenOptions(type) {
-  const o = { provider: $("genProvider").value, model: $("genModel").value || undefined };
-  if (type === "image") { o.format = $("optFormat").value; o.aspect_ratio = $("optAspect").value; o.variants = $("optVariants").value; }
-  else {
-    o.duration = $("optDuration").value; o.resolution = $("optResolution").value; o.aspect_ratio = $("optAspectV").value;
-    if ($("optAudio")) o.generate_audio = $("optAudio").checked;
-    const neg = $("genNeg") && $("genNeg").value.trim(); if (neg) o.negative_prompt = neg;
-  }
-  return o;
-}
+/* provider credits (Venice reports a live balance; shown in the top meters) */
 async function loadCredits() {
   try {
     const d = await api("/api/connections");
@@ -619,147 +498,17 @@ async function loadCredits() {
     else if (a.balance && a.balance.error) { artcraftState = "blocked"; artcraftCredits = null; }
     else { artcraftState = "connected"; artcraftCredits = a.balance ? (a.balance.credits != null ? a.balance.credits : null) : null; }
     updateMeters();
-  } catch { $("genCredits").textContent = ""; }
+  } catch {}
 }
-function setCredits(usd) {
-  veniceUsd = usd != null ? Number(usd) : null;
-  updateMeters();
-  const cost = lastGenCost != null ? `<div style="margin-top:2px;color:var(--dim);font-size:10px">last gen ~<b style="color:var(--pri)">$${lastGenCost.toFixed(lastGenCost < 0.1 ? 4 : 2)}</b></div>` : "";
-  $("genCredits").innerHTML = usd != null ? `Venice credits<br><b>$${Number(usd).toFixed(2)}</b>${cost}` : `<span style="color:var(--dim)">Venice not connected</span>${cost}`;
-}
-// Charge for the gen just run = balance before − balance after (Venice reports live balance
-// in a header after each call). Show it by the output and in the credits box.
-function recordGenCost(newBalance) {
-  if (veniceUsd != null && newBalance != null) {
-    const delta = veniceUsd - Number(newBalance);
-    lastGenCost = delta > 0 ? delta : 0;
-    const out = $("genOut");
-    if (out) { const c = document.createElement("div"); c.className = "gencost"; c.style.cssText = "margin-top:6px;font-size:11px;color:var(--dim)"; c.innerHTML = `this generation cost <b style="color:var(--pri)">$${lastGenCost.toFixed(lastGenCost < 0.1 ? 4 : 2)}</b> · $${Number(newBalance).toFixed(2)} left`; out.appendChild(c); }
-    toast(`gen cost ~$${lastGenCost.toFixed(lastGenCost < 0.1 ? 4 : 2)}`);
-  }
-  setCredits(newBalance);
-}
-function showPrompt(container, text, tail) { container.innerHTML = `<div class="promptbox"><button class="copybtn">COPY</button>${esc(text)}</div>` + (tail || ""); const b = container.querySelector(".copybtn"); if (b) b.onclick = () => copyText(text); }
-
-// Write the prompt over the STREAMING chat path (no Cloudflare timeout on big skills).
-async function streamPromptToOut(p, brief, images, lyrics) {
-  const briefText = lyrics
-    ? `Base the visual on these song lyrics — capture their imagery, mood, story and emotion:\n"""\n${lyrics}\n"""\n\n${brief || "Create a scene that reflects the lyrics above."}`
-    : brief;
-  const out = $("genOut");
-  if (!p) { showPrompt(out, briefText); return briefText; }
-  out.innerHTML = "";
-  const wrap = document.createElement("div"); wrap.className = "promptbox";
-  const cb = document.createElement("button"); cb.className = "copybtn"; cb.textContent = "COPY";
-  const span = document.createElement("span"); span.style.whiteSpace = "pre-wrap";
-  wrap.appendChild(cb); wrap.appendChild(span); out.appendChild(wrap);
-  const content = images.length ? [...images.map((im) => ({ type: "image", source: { type: "base64", media_type: im.media_type, data: im.data } })), { type: "text", text: briefText }] : briefText;
-  const payload = { provider: "claude", model: $("mClaude").value, projectId: p.id, messages: [{ role: "user", content }] };
-  let text = "";
-  const res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) });
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("text/html") || res.status === 502 || res.status === 504) {
-    span.textContent = "⚠ prompt write crashed at the server (HTTP " + res.status + ") — the streaming endpoint isn't live yet or timed out.";
-    cb.onclick = () => copyText(span.textContent); return "";
-  }
-  const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "";
-  while (true) {
-    const { done, value } = await reader.read(); if (done) break;
-    buf += dec.decode(value, { stream: true }); const lines = buf.split("\n"); buf = lines.pop();
-    for (const line of lines) {
-      const t = line.trim(); if (!t.startsWith("data:")) continue; const data = t.slice(5).trim(); if (data === "[DONE]") continue;
-      let evt; try { evt = JSON.parse(data); } catch { continue; }
-      if (evt.delta) { text += evt.delta; span.textContent = text; out.scrollTop = out.scrollHeight; }
-      else if (evt.usage) { addSpend($("mClaude").value, evt.usage.input || 0, evt.usage.output || 0); }
-      else if (evt.error) { span.textContent = "⚠ " + evt.error; }
-    }
-  }
-  cb.onclick = () => copyText(text);
-  return text;
-}
-async function generate(promptOnly) {
-  const type = mode; if (type !== "image" && type !== "video") return;
-  const brief = $("genBrief").value.trim();
-  const images = (await Promise.all(genAtts.map(shrinkAtt))).map((a) => ({ media_type: a.media_type, data: a.data }));
-  const lyrics = genAudio && genAudio.lyrics ? genAudio.lyrics.trim() : "";
-  if (!brief && !images.length && !lyrics && !genVidRefs.length) { toast("add a brief, an image, a video, or a song"); return; }
-  const p = activeGenProject(type);
-  const btn = promptOnly ? $("writeBtn") : $("genBtn"); btn.disabled = true; $("genHint").textContent = "writing prompt…";
-  $("genOut").innerHTML = '<div class="empty">writing…</div>';
-  let promptText;
-  try { promptText = await streamPromptToOut(p, brief, images, lyrics); }
-  catch (e) { $("genOut").innerHTML = `<div class="msg err"><div class="bub">⚠ ${esc(String(e.message || e))}</div></div>`; btn.disabled = false; $("genHint").textContent = ""; return; }
-  if (promptOnly) { btn.disabled = false; $("genHint").textContent = ""; return; }
-
-  // Generate: hand the already-written prompt to the provider (fast — no re-running Claude).
-  const out = $("genOut");
-  $("genHint").textContent = "generating…";
-  const status = document.createElement("div"); status.className = "status"; status.id = "vstat"; status.style.marginTop = "8px"; status.textContent = "sending to provider…"; out.appendChild(status);
-  const options = collectGenOptions(type);
-  const req = { projectId: p ? p.id : undefined, brief, options, prewritten: promptText, images };
-  if (type === "video") {
-    req.imageUrl = $("genRef").value.trim() || undefined;
-    if (genVidRefs.length) req.videos = genVidRefs.map((v) => ({ url: v.url, duration: v.duration || 0 }));
-  }
-  await submitGen(type, req, out);
-  btn.disabled = false; $("genHint").textContent = "";
-}
-
-// POST a prepared generation request and render whatever stage comes back. Split out so the
-// face-consent path can re-submit the SAME request with consent granted.
-async function submitGen(type, req, out) {
-  try {
-    const r = await api(type === "image" ? "/api/image" : "/api/video", req);
-    const vs = $("vstat");
-    if (r.error) { if (vs) vs.textContent = "⚠ " + r.error; }
-    else if (r.stage === "consent") { renderConsent(type, req, out, r); }
-    else if (r.stage === "generated" && r.images) { if (vs) vs.remove(); r.images.forEach((im) => { const img = document.createElement("img"); img.src = im.dataUrl; out.appendChild(img); }); if (r.balanceUsd != null) recordGenCost(r.balanceUsd); loadRefWallIfOpen(); }
-    else if (r.stage === "queued") { if (vs) vs.textContent = r.quoteUsd != null ? `queued — rendering… (est $${Number(r.quoteUsd).toFixed(2)})` : "queued — rendering…"; if (r.quoteUsd != null) lastGenCost = Number(r.quoteUsd); if (r.balanceUsd != null) recordGenCost(r.balanceUsd); pollJob(r.provider || (type === "video" ? "venice" : "artcraft"), r.job, type, r.model, req.projectId); }
-    else { if (vs) vs.textContent = r.note || "done"; }
-  } catch (e) { const vs = $("vstat"); if (vs) vs.textContent = "⚠ " + String(e.message || e); }
-}
-
-// Venice face-media consent gate. Shows the exact policy text Venice returned and requires an
-// explicit click before resubmitting WITH consent — we never auto-accept an agreement.
-function renderConsent(type, req, out, r) {
-  const vs = $("vstat"); if (vs) vs.remove();
-  const box = document.createElement("div");
-  box.style.cssText = "margin-top:10px;border:1px solid color-mix(in srgb, var(--pri) 45%, var(--line));border-radius:8px;padding:12px;background:var(--panel)";
-  const roles = (r.faceRoles && r.faceRoles.length) ? ` (detected in: ${esc(r.faceRoles.join(", "))})` : "";
-  box.innerHTML = `<div style="color:var(--pri);font-size:12px;letter-spacing:1px;margin-bottom:6px">⚠ FACE-MEDIA CONSENT REQUIRED${roles}</div>`
-    + `<div style="font-size:12px;white-space:pre-wrap;color:var(--txt);margin-bottom:10px">${esc(r.policyText || "")}</div>`
-    + `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;margin-bottom:10px"><input type="checkbox" id="consentChk" style="width:auto;margin-top:2px"><span>I attest to all of the above — the likeness is mine or I have explicit legal consent from every depicted person, and I acknowledge submitted media may be screened.</span></label>`
-    + `<button class="btn-solid" id="consentGo" disabled style="opacity:.5">CONFIRM & GENERATE</button>`;
-  out.appendChild(box);
-  const chk = box.querySelector("#consentChk"), go = box.querySelector("#consentGo");
-  chk.onchange = () => { go.disabled = !chk.checked; go.style.opacity = chk.checked ? "1" : ".5"; };
-  go.onclick = () => {
-    box.remove();
-    const s = document.createElement("div"); s.className = "status"; s.id = "vstat"; s.style.marginTop = "8px"; s.textContent = "consent granted — sending…"; out.appendChild(s);
-    submitGen(type, { ...req, consent: true }, out);
-  };
-}
-async function pollJob(provider, job, type, model, projectId) {
-  if (!job) { const vs = $("vstat"); if (vs) vs.textContent = "no job token returned"; return; }
-  for (let i = 0; i < 48; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
-    let d; try { d = (provider === "venice" && type === "video") ? await api(`/api/video?job=${encodeURIComponent(job)}&model=${encodeURIComponent(model || "")}${projectId ? "&projectId=" + encodeURIComponent(projectId) : ""}`) : await api(`/api/genjob?provider=${provider}&job=${encodeURIComponent(job)}&type=${type}`); } catch { continue; }
-    const vs = $("vstat");
-    if (d.url) { if (vs) vs.outerHTML = type === "video" ? `<video src="${d.url}" controls></video>` : `<img src="${d.url}">`; loadRefWallIfOpen(); return; }
-    if (d.failed || /fail|error|dead|cancel/i.test(d.status || "")) { if (vs) vs.textContent = "render failed: " + (d.status || d.error || ""); return; }
-    if (vs) vs.textContent = `rendering… (${d.status || "processing"})`;
-  }
-  const vs = $("vstat"); if (vs) vs.textContent = "still rendering — check the reference wall shortly";
-}
+function setCredits(usd) { veniceUsd = usd != null ? Number(usd) : null; updateMeters(); }
 
 /* reference-wall dock */
 function toggleRefDock() { const d = $("refDock"); if (d.classList.contains("hide")) { show("refDock"); loadRefWall(); } else hide("refDock"); }
 function loadRefWallIfOpen() { if (!$("refDock").classList.contains("hide")) loadRefWall(); }
-// Attach one image (base64 data URL) to whatever prompt is open — the active chat column, or
-// the image/video brief. Kept so gallery images can be added to a prompt with one click.
+// Attach one image (base64 data URL) to the Dual Mind composer, opening the panel if closed.
 function addImgToComposer(att) {
-  if (mode === "chat") { chatAtts.push(att); renderChatAtts(); return true; }
-  genAtts.push(att); renderGenAtts(); return true;
+  toggleChatPanel(true);
+  chatAtts.push(att); renderChatAtts(); return true;
 }
 function dataUrlToAtt(dataUrl) { const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || ""); return m ? { media_type: m[1], data: m[2], dataUrl } : null; }
 // Downscale a reference image before sending it to generation. A multi-MB base64 in the request
@@ -844,40 +593,11 @@ async function moveSelectedTo(v) {
   const set = new Set(ids); galMedia.forEach((m) => { if (set.has(m.id)) m.folder = folder; });
   galSel = {}; toast(`moved ${ids.length} item${ids.length > 1 ? "s" : ""}`); renderGallery();
 }
-// Send a gallery image straight into a mode's reference box. From the lightbox you pick the target.
+// Route one image attachment: "chat" → Dual Mind composer, "board" → a node on the Space.
 function sendMediaTo(target, att) {
   if (!att) return false;
-  if (target === "chat") { if (mode !== "chat") setMode("chat"); return addImgToComposer(att); }
-  if (mode !== target) setMode(target);   // switching resets the gen composer, so push AFTER
-  genAtts.push(att); renderGenAtts(); return true;
-}
-// ---- video-to-video references ----
-function renderVidRefs() {
-  const box = $("genVidRefs"); if (!box) return; box.innerHTML = "";
-  genVidRefs.forEach((v, i) => {
-    const el = document.createElement("div"); el.className = "att vatt";
-    el.innerHTML = `<video src="${v.url}" muted preload="metadata"></video><span class="vlabel">▶ ${v.duration ? v.duration + "s" : "video"}</span><button class="x">✕</button>`;
-    el.querySelector(".x").onclick = () => { genVidRefs.splice(i, 1); renderVidRefs(); };
-    box.appendChild(el);
-  });
-}
-function videoDuration(src) {
-  return new Promise((res) => {
-    const v = document.createElement("video"); v.preload = "metadata"; v.muted = true;
-    v.onloadedmetadata = () => res(isFinite(v.duration) && v.duration > 0 ? Math.round(v.duration) : 0);
-    v.onerror = () => res(0);
-    v.src = src;
-    setTimeout(() => res(0), 6000);
-  });
-}
-async function addVideoRef(src, name) {
-  if (!src) return false;
-  if (/^data:/.test(src) && src.length * 0.75 > 6000000) { toast("that video is too big to reference inline (~" + ((src.length * 0.75) / 1e6).toFixed(1) + " MB) — use a clip generated in Parallax, or a smaller file"); return false; }
-  if (mode !== "video") setMode("video");            // switching resets the composer, so add AFTER
-  if (genVidRefs.length >= 3) { toast("max 3 video references"); return false; }
-  const dur = await videoDuration(src);
-  genVidRefs.push({ url: src, duration: dur, name: name || "reference" }); renderVidRefs();
-  return true;
+  if (target === "board") { cvLoad(); const c = cvCenter(); cvAddImage(att.dataUrl, att.galleryId || null, c.x, c.y); toast("image on the board"); return true; }
+  return addImgToComposer(att);
 }
 
 function galTile(m) {
@@ -956,8 +676,7 @@ function openLightbox(type, src, media) {
     const row = document.createElement("div"); row.className = "lbrow";
     row.append(
       lbBtn("⬇ Download", () => downloadMedia(src, "parallax-video." + mediaExt(src, "video"))),
-      lbBtn("→ Video ref", async () => { if (await routeMediaTo("video", item)) closeLightbox(); }, "btn-ghost"),
-      lbBtn("→ Image (last frame)", async () => { if (await routeMediaTo("image", item)) closeLightbox(); }, "btn-ghost"),
+      lbBtn("→ Board", async () => { if (await routeMediaTo("board", item)) closeLightbox(); }, "btn-ghost"),
       lbBtn("→ Chat (frames)", async () => { if (await routeMediaTo("chat", item)) closeLightbox(); }, "btn-ghost"),
       lbBtn("⑂ Break into frames", () => breakIntoFrames(src, item), "btn-ghost")
     );
@@ -975,8 +694,7 @@ function openLightbox(type, src, media) {
     row.append(
       lbBtn("⬇ Download", () => downloadMedia(src, "parallax-image." + mediaExt(src, "image"))),
       lbBtn("→ Chat", async () => { if (await routeMediaTo("chat", item)) closeLightbox(); }, "btn-ghost"),
-      lbBtn("→ Image", async () => { if (await routeMediaTo("image", item)) closeLightbox(); }, "btn-ghost"),
-      lbBtn("→ Video", async () => { if (await routeMediaTo("video", item)) closeLightbox(); }, "btn-ghost")
+      lbBtn("→ Board", async () => { if (await routeMediaTo("board", item)) closeLightbox(); }, "btn-ghost")
     );
     body.appendChild(row);
   }
@@ -996,10 +714,10 @@ function makeResizer(el, edge, key, min, max) {
   h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
 }
 function setupResizers() {
-  const side = document.querySelector(".side"), ref = $("refDock");
-  makeResizer(side, "right", "plx-w-side", 210, 460);
+  const panel = $("chatPanel"), ref = $("refDock");
+  makeResizer(panel, "right", "plx-w-chat", 300, 640);
   makeResizer(ref, "left", "plx-w-ref", 210, 560);
-  try { const ws = localStorage.getItem("plx-w-side"); if (ws && side) side.style.width = side.style.flexBasis = ws + "px"; } catch {}
+  try { const wc = localStorage.getItem("plx-w-chat"); if (wc && panel) panel.style.width = panel.style.flexBasis = wc + "px"; } catch {}
   try { const wr = localStorage.getItem("plx-w-ref"); if (wr && ref) ref.style.width = ref.style.flexBasis = wr + "px"; } catch {}
 }
 
@@ -1023,23 +741,22 @@ async function sendVideoFramesToChat(src) {
   toast("sampling frames…");
   const frames = await extractFrames(src, 6);
   if (!frames.length) { toast("couldn't read video (a remote URL may block frame capture)"); return false; }
-  if (mode !== "chat") setMode("chat");
+  toggleChatPanel(true);
   frames.forEach((f) => chatAtts.push(f)); renderChatAtts();
   const ta = $("chatText"); if (ta && !ta.value.trim()) ta.value = `Watch these ${frames.length} sampled frames from the clip and `;
   toast(`${frames.length} frames sent to chat`); if (ta) ta.focus();
   return true;
 }
-// The single router every entry point (lightbox buttons + drag-drop) calls.
+// The single router every entry point (lightbox buttons + drag-drop) calls: chat | board.
 async function routeMediaTo(target, item) {
   if (!item || !item.src) return false;
   if (item.type === "video") {
-    if (target === "video") return await addVideoRef(item.src, "reference");
-    if (target === "image") { const f = await grabVideoFrame(item.src, 0.98); if (!f) { toast("couldn't read video"); return false; } sendMediaTo("image", f); toast("last frame → image reference"); return true; }
-    if (target === "chat") return await sendVideoFramesToChat(item.src);
-    return false;
+    if (target === "board") { await cvWhenReady(); cvLoad(); const c = cvCenter(); cvAddVideo(item.src, item.id || null, c.x, c.y, null); toast("clip on the board"); return true; }
+    return await sendVideoFramesToChat(item.src);
   }
   const att = await srcToImgAtt(item.src); if (!att) { toast("couldn't read image"); return false; }
-  const ok = sendMediaTo(target, att); if (ok) toast("sent to " + target + " reference"); return ok;
+  if (target === "board") { cvLoad(); const c = cvCenter(); await cvAddImage(att.dataUrl, item.id || null, c.x, c.y); toast("image on the board"); return true; }
+  const ok = sendMediaTo("chat", att); if (ok) toast("sent to chat"); return ok;
 }
 
 // ---- video → frames panel: save frames to the gallery as images (deduped) + send any frame anywhere ----
@@ -1061,8 +778,7 @@ function renderFramesPanel(wrap, frames, item) {
     const acts = document.createElement("div"); acts.className = "frmacts";
     acts.append(
       miniBtn("＋Chat", () => { sendMediaTo("chat", f); toast("frame → chat"); }),
-      miniBtn("＋Img", () => { sendMediaTo("image", f); toast("frame → image ref"); }),
-      miniBtn("＋Vid", () => { sendMediaTo("video", f); toast("frame → video ref"); })
+      miniBtn("＋Board", () => { sendMediaTo("board", f); })
     );
     const already = localStorage.getItem(savedKey) === "1";
     const save = miniBtn(already ? "✓ saved" : "⬇ Save", null);
@@ -1073,7 +789,7 @@ function renderFramesPanel(wrap, frames, item) {
   const bar = document.createElement("div"); bar.className = "frmbar";
   bar.append(
     lbBtn("⬇ Save all", async () => { for (let i = 0; i < frames.length; i++) { const k = `frm:${item.id || "x"}:${i}`; if (localStorage.getItem(k) !== "1") await saveFrameToGallery(frames[i], item, i, null, k); } toast("saved frames to gallery"); loadRefWallIfOpen(); renderFramesPanel(wrap, frames, item); }),
-    lbBtn("→ All frames to Chat", async () => { if (mode !== "chat") setMode("chat"); frames.forEach((f) => chatAtts.push(f)); renderChatAtts(); toast("frames sent to chat"); closeLightbox(); })
+    lbBtn("→ All frames to Chat", async () => { toggleChatPanel(true); frames.forEach((f) => chatAtts.push(f)); renderChatAtts(); toast("frames sent to chat"); closeLightbox(); })
   );
   wrap.appendChild(bar);
 }
@@ -1119,7 +835,7 @@ async function extractFrames(src, n = 6) {
 // videos are sampled into frames (audio can't be analyzed via the API — we note that).
 async function sendSelectionToClaude() {
   const ids = Object.keys(galSel); if (!ids.length) return;
-  if (mode !== "chat") setMode("chat");
+  toggleChatPanel(true);
   toast("preparing media…");
   const atts = []; let vidCount = 0, frameCount = 0, imgCount = 0, failed = 0;
   for (const id of ids) {
@@ -1809,10 +1525,14 @@ setupResizers();
 $("loginBtn").onclick = login;
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 $("logoutBtn").onclick = logout;
-document.querySelectorAll(".mode").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+$("chatToggle").onclick = () => toggleChatPanel();
+$("chatCollapse").onclick = () => toggleChatPanel(false);
+$("chatThreadSel").onchange = (e) => setThread(e.target.value);
+$("projBtn").onclick = () => { renderProjects(); show("projModal"); };
+$("projClose").onclick = () => hide("projModal");
 $("togClaude").onclick = () => toggleLane("claude");
 $("togGpt").onclick = () => toggleLane("gpt");
-$("newProjBtn").onclick = () => { editingId = null; $("npName").value = ""; $("npInstr").value = ""; $("npType").value = "chat"; $("npTitle").textContent = "NEW PROJECT"; fillNpSkills([]); show("npModal"); };
+$("newProjBtn").onclick = () => { hide("projModal"); editingId = null; $("npName").value = ""; $("npInstr").value = ""; $("npType").value = "chat"; $("npTitle").textContent = "NEW PROJECT"; fillNpSkills([]); show("npModal"); };
 $("npSave").onclick = saveNP; $("npCancel").onclick = () => { hide("npModal"); editingId = null; };
 $("skillsBtn").onclick = openSkills; $("skillsClose").onclick = () => hide("skillsModal");
 $("skSave").onclick = saveUserSkill; $("skCancel").onclick = () => hide("skillEditModal"); $("skillEditClose").onclick = () => hide("skillEditModal");
@@ -1857,29 +1577,23 @@ $("refFile").onchange = async (e) => {
   }
   toast("added to gallery"); loadRefWall();
 };
-/* v36: single chat composer wiring */
-$("chatSend").onclick = () => sendCol(activeColId || "__raw", false);
-$("chatCollab").onclick = () => sendCol(activeColId || "__raw", true);
-$("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendCol(activeColId || "__raw", false); } });
+/* Dual Mind panel wiring */
+$("chatSend").onclick = () => panelSend(false);
+$("chatCollab").onclick = () => panelSend(true);
+$("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); panelSend(false); } });
 $("chatFile").onchange = (e) => { collectImages(e.target.files, chatAtts, renderChatAtts); e.target.value = ""; };
 $("chatMic").onclick = () => toggleMic($("chatText"), $("chatMic"));
 $("chatText").addEventListener("paste", (e) => { const its = [...((e.clipboardData && e.clipboardData.items) || [])].filter((it) => it.type && it.type.startsWith("image/")); if (its.length) { e.preventDefault(); collectImages(its.map((it) => it.getAsFile()).filter(Boolean), chatAtts, renderChatAtts); } });
 (function () {
-  const dock = $("chatDock"); if (!dock) return;
-  dock.addEventListener("dragover", (e) => { e.preventDefault(); });
-  dock.addEventListener("drop", async (e) => {
+  const panel = $("chatPanel"); if (!panel) return;
+  panel.addEventListener("dragover", (e) => { e.preventDefault(); });
+  panel.addEventListener("drop", async (e) => {
     e.preventDefault(); e.stopPropagation();
     const plx = e.dataTransfer.getData("application/x-plx-media");
     if (plx) { try { await routeMediaTo("chat", JSON.parse(plx)); return; } catch {} }
     await dropToAtts(e.dataTransfer, chatAtts, renderChatAtts);
   });
 })();
-$("writeBtn").onclick = () => generate(true);
-$("genBtn").onclick = () => generate(false);
-$("genImgFile").onchange = (e) => { collectImages(e.target.files, genAtts, renderGenAtts); e.target.value = ""; };
-$("genAudioFile").onchange = (e) => { attachAudio(e.target.files[0]); e.target.value = ""; };
-$("genMic").onclick = () => toggleMic($("genBrief"), $("genMic"));
-$("genBrief").addEventListener("paste", (e) => { const its = [...((e.clipboardData && e.clipboardData.items) || [])].filter((it) => it.type && it.type.startsWith("image/")); if (its.length) { e.preventDefault(); collectImages(its.map((it) => it.getAsFile()).filter(Boolean), genAtts, renderGenAtts); } });
 
 /* ---- drag & drop image references (OS files, pasted data-URLs, or in-app gallery drags) ---- */
 // Pull any image payloads out of a DataTransfer: real files first, then a data:/http image
@@ -1906,7 +1620,7 @@ async function dropToAtts(dt, arr, render) {
     if (/^data:image\//i.test(u)) { const a = dataUrlToAtt(u); if (a) { arr.push(a); n++; } }
     else {
       try { const b = await (await fetch(u)).blob(); if (b && /^image\//.test(b.type)) { const before = arr.length; await collectImages([new File([b], "reference", { type: b.type })], arr, render); n += arr.length - before; } }
-      catch { if (mode === "video" && $("genRef")) { $("genRef").value = u; n++; } }
+      catch { /* cross-origin image — skipped */ }
     }
   }
   if (urls.length) render();
@@ -1916,28 +1630,6 @@ async function dropToAtts(dt, arr, render) {
 // Page-level guard: without this, dropping an image anywhere the app doesn't handle makes the
 // browser NAVIGATE to that image, unloading the app and wiping the composer. Swallow stray drops.
 ["dragover", "drop"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); }, false));
-// The generation composer is a drop target: drop an image anywhere on it → added as a reference.
-(function () {
-  const dock = $("genDock"), dz = $("genDrop");
-  if (!dock) return;
-  dock.addEventListener("dragover", (e) => { e.preventDefault(); if (dz) dz.classList.add("over"); });
-  dock.addEventListener("dragleave", (e) => { if (dz && !dock.contains(e.relatedTarget)) dz.classList.remove("over"); });
-  dock.addEventListener("drop", async (e) => {
-    e.preventDefault(); e.stopPropagation(); if (dz) dz.classList.remove("over");
-    const plx = e.dataTransfer.getData("application/x-plx-media");
-    if (plx) { try { await routeMediaTo(mode, JSON.parse(plx)); return; } catch {} }
-    const vids = [...((e.dataTransfer && e.dataTransfer.files) || [])].filter((f) => f.type && f.type.startsWith("video/"));
-    if (mode === "video" && vids.length) {
-      for (const f of vids) {
-        if (f.size > 6000000) { toast(`${f.name}: too large to reference inline (max ~6MB) — use a clip generated in Parallax`); continue; }
-        const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
-        await addVideoRef(url, f.name);
-      }
-      return;
-    }
-    await dropToAtts(e.dataTransfer, genAtts, renderGenAtts);
-  });
-})();
 /* v41: space canvas wiring */
 (function () {
   const view = $("cvView"); if (!view) return;
@@ -1988,9 +1680,11 @@ async function dropToAtts(dt, arr, render) {
     $("cvNodes").innerHTML = ""; for (const k in cvEls) delete cvEls[k];
     cvDrawEdges(); cvEmptyUpd();
   };
-  // paste an image anywhere while in Space mode → it lands on the board
+  // paste an image anywhere → it lands on the board (unless you're pasting into a
+  // text field, the Dual Mind panel, or an open modal)
   document.addEventListener("paste", (e) => {
-    if (mode !== "space") return;
+    const t = e.target;
+    if (t && ((t.closest && (t.closest("#chatPanel") || t.closest(".modal") || t.closest("#refDock"))) || /^(INPUT|TEXTAREA)$/.test(t.tagName || ""))) return;
     const its = [...((e.clipboardData && e.clipboardData.items) || [])].filter((it) => it.type && it.type.startsWith("image/"));
     if (its.length) { e.preventDefault(); cvAddFiles(its.map((it) => it.getAsFile()).filter(Boolean)); }
   });
@@ -2024,6 +1718,6 @@ async function dropToAtts(dt, arr, render) {
   });
 })();
 
-for (const m of ["skillsModal","infoModal","connModal","npModal","skillEditModal"]) $(m).addEventListener("click", (e) => { if (e.target.id === m) hide(m); });
+for (const m of ["skillsModal","infoModal","connModal","npModal","skillEditModal","projModal"]) $(m).addEventListener("click", (e) => { if (e.target.id === m) hide(m); });
 
 if (token) showApp();

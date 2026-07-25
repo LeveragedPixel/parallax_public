@@ -397,6 +397,27 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .rz:hover::after,.rz.drag::after{background:var(--pri);width:2px}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- v53: Dual Mind panel — collapsible left chat rail; the Space owns the rest ---- */
+.chatpanel{width:380px;flex:0 0 auto;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;box-shadow:var(--sh-1)}
+.chatpanel.hide{display:none}
+.cp-h{display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.cp-ttl{font-size:10.5px;letter-spacing:.14em;font-weight:800;color:var(--pri);white-space:nowrap}
+.cp-h select{flex:1;min-width:0;font-size:11.5px;padding:4px 6px}
+.cp-h .lanetog{padding:3px 9px;font-size:10px}
+.cp-h .x{background:transparent;color:var(--faint);font-size:15px;padding:2px 6px}
+.cp-h .x:hover{color:var(--txt)}
+.cp-models{display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.cp-models .m{display:flex;gap:5px;align-items:center;min-width:0;flex:1}
+.cp-models select{flex:1;min-width:0;font-size:10.5px;padding:2px 4px}
+.cp-models .a{color:var(--claude);font-weight:600;font-size:10.5px}
+.cp-models .c{color:var(--gpt);font-weight:600;font-size:10.5px}
+.cp-models .st{font-size:9.5px;color:var(--faint);white-space:nowrap}
+.cp-comp{border-top:1px solid var(--line);padding:10px 12px 8px;background:linear-gradient(180deg,var(--panel),var(--panel2))}
+.cp-comp textarea{width:100%;min-height:60px;max-height:180px;margin-bottom:8px}
+.cp-foot{padding:8px 12px 10px;border-top:1px solid var(--line)}
+#chatToggle.on{color:var(--pri-hi);border-color:color-mix(in srgb,var(--pri) 45%,var(--line));background:color-mix(in srgb,var(--pri) 10%,transparent);font-weight:700}
+#projList{display:flex;flex-direction:column}
 </style>
 </head>
 <body>
@@ -417,9 +438,8 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
   <div class="top">
     <div class="brand">Parallax <b>Studio</b></div>
     <span class="chip" id="provStatus" title="live status of each provider"></span><span class="chip" id="build" style="font-weight:700" title="build version">v…</span>
-    <div class="modes"><button class="mode on" data-mode="chat">Chat</button><button class="mode" data-mode="image">Image</button><button class="mode" data-mode="video">Video</button><button class="mode" data-mode="space" title="infinite creative board — drag off an image and prompt edits, variations, recreations">Space</button></div>
-    <button class="lanetog on a" id="togClaude">Claude</button>
-    <button class="lanetog on c" id="togGpt">ChatGPT</button>
+    <button class="tbtn" id="chatToggle" title="open / close the Dual Mind chat panel — brainstorm with both minds, then build on the board">💬 Dual Mind</button>
+    <button class="tbtn" id="projBtn" title="projects — create, rename, delete; open a chat project as the panel thread">Projects</button>
     <div class="sp"></div>
     <span class="meters" id="meters"></span>
     <button class="tbtn" id="galBtn">Gallery</button>
@@ -430,29 +450,38 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
     <button class="tbtn" id="logoutBtn">Sign out</button>
   </div>
 
-  <div class="modelbar" id="modelBar">
-    <div class="m"><span class="a">Claude</span><select id="mClaude"></select><span class="st" id="mClaudeState"></span></div>
-    <div class="m"><span class="c">ChatGPT</span><select id="mGpt"></select><span class="st" id="mGptState"></span></div>
-    <span class="chip" style="margin-left:auto">both minds answer in the highlighted column · toggle a lane to silence it</span>
-  </div>
-
   <div class="body">
-    <aside class="side">
-      <div class="sec-h"><span>Projects <span class="cnt" id="pcount">0</span></span></div>
-      <div class="hintline">click a chat project to open it as a column (up to 3)</div>
-      <div class="sbody" id="plist"></div>
-      <button class="btn-wide" id="newProjBtn">+ New project</button>
-      <button class="btn-wide" id="skillsBtn" style="border-style:solid">Skills library</button>
+    <aside id="chatPanel" class="chatpanel">
+      <div class="cp-h">
+        <span class="cp-ttl">DUAL MIND</span>
+        <select id="chatThreadSel" title="which conversation this panel holds — Raw dual chat, or any chat project"></select>
+        <button class="lanetog on a" id="togClaude" title="toggle Claude's lane">Claude</button>
+        <button class="lanetog on c" id="togGpt" title="toggle ChatGPT's lane">GPT</button>
+        <button class="x" id="chatCollapse" title="collapse — give the Space the whole window">⟨</button>
+      </div>
+      <div class="cp-models">
+        <div class="m"><span class="a">Claude</span><select id="mClaude"></select><span class="st" id="mClaudeState"></span></div>
+        <div class="m"><span class="c">GPT</span><select id="mGpt"></select><span class="st" id="mGptState"></span></div>
+      </div>
+      <div class="stream" id="panelStream"></div>
+      <div class="cp-comp">
+        <div class="atts" id="chatAtts"></div>
+        <textarea id="chatText" placeholder="Brainstorm with both minds…  Enter to send · Shift+Enter for a new line"></textarea>
+        <div class="cbtns">
+          <input id="chatFile" type="file" accept="image/*" multiple style="display:none">
+          <label for="chatFile" class="tbtn" style="padding:7px 11px;cursor:pointer" title="attach images">📎</label>
+          <button class="tbtn micbtn" id="chatMic" title="record voice" style="padding:7px 11px">🎤</button>
+          <button class="btn-solid" id="chatSend">Send</button>
+          <button class="btn-ghost" id="chatCollab" title="Claude answers first, then ChatGPT critiques and builds on it">Collab</button>
+          <span class="hint" id="chatStatus"></span>
+        </div>
+      </div>
+      <div class="cp-foot"><button class="btn-wide" id="skillsBtn" title="the skills library — attach a skill to a project or a board node">⚡ Skills library</button></div>
     </aside>
 
     <main class="deck">
       <div class="stage" id="stage">
-        <div class="cols" id="cols"></div>
-        <div class="genstage hide" id="genStage">
-          <div class="col-h" style="color:var(--sec)"><span class="dot c"></span><span id="genTitle">GENERATION</span></div>
-          <div class="gen-out" id="genOut"><div class="empty">Switch to Image or Video and write or generate below.</div></div>
-        </div>
-        <div class="genstage hide" id="spaceStage">
+        <div class="genstage" id="spaceStage">
           <div class="col-h"><span class="dot a"></span><b>Space</b>
             <select id="cvBoardSel" class="tbtn" style="padding:3px 8px;font-size:11px;max-width:170px" title="your boards — saved to your account, they follow you to any computer"></select>
             <button class="tbtn" id="cvBoardNew" style="padding:4px 9px;font-size:11px" title="new board">＋</button>
@@ -474,49 +503,13 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
           </div>
         </div>
       </div>
-      <div class="dock">
-        <!-- single chat composer (v36+): one box, targets the highlighted column -->
-        <div class="composer" id="chatDock">
-          <div id="chatTargetRow"><span>Sending to</span><span id="chatTarget">→ Raw dual chat</span><span class="hint">Enter to send · Shift+Enter for a new line · click a column to target it</span></div>
-          <div class="atts" id="chatAtts"></div>
-          <textarea id="chatText" placeholder="Message this project — every mind that's toggled on will answer…"></textarea>
-          <div class="cbtns">
-            <input id="chatFile" type="file" accept="image/*" multiple style="display:none">
-            <label for="chatFile" class="tbtn" style="padding:7px 11px;cursor:pointer">📎</label>
-            <button class="tbtn micbtn" id="chatMic" title="record voice" style="padding:7px 11px">🎤</button>
-            <button class="btn-solid" id="chatSend">Send</button>
-            <button class="btn-ghost" id="chatCollab" title="Claude answers first, then ChatGPT critiques and builds on it">Collab</button>
-            <span class="hint" id="chatStatus"></span>
-          </div>
-        </div>
-        <div class="composer hide" id="genDock">
-          <div class="gen-row" style="margin-bottom:8px">
-            <div class="f"><label>Provider</label><select id="genProvider"></select></div>
-            <div class="f"><label>Model <span class="st" id="genModelState" style="color:var(--faint);font-size:10px"></span></label><select id="genModel" style="min-width:170px"></select></div>
-            <div id="genOpts" class="gen-row" style="gap:10px"></div>
-            <div class="cred" id="genCredits"></div>
-          </div>
-          <div id="genRefWrap" class="hide" style="margin-bottom:6px"><input id="genRef" placeholder="reference image URL (optional — image-to-video)" style="width:100%" /></div>
-          <div id="genVidWrap" class="hide" style="margin-bottom:6px">
-            <div class="dropzone">drag a video here for video-to-video — or in the Gallery, click a video → "→ Video reference" (up to 3)</div>
-            <div id="genVidRefs" class="atts"></div>
-          </div>
-          <div id="genNegWrap" class="hide" style="margin-bottom:6px"><input id="genNeg" placeholder="negative prompt — things to avoid in the video (optional)" style="width:100%" /></div>
-          <div id="genDrop" class="dropzone">drag an image here, paste it, or <label for="genImgFile" class="dzlink">browse</label> — added as a reference</div>
-          <div id="genAtts" class="atts"></div>
-          <div id="genAudioBox" class="audiobox" style="display:none"></div>
-          <textarea id="genBrief" placeholder="describe the shot / character / scene…  (paste an image to reference it · or attach a song and the prompt is written from its lyrics)" style="width:100%;min-height:46px;max-height:150px"></textarea>
-          <input id="genImgFile" type="file" accept="image/*" multiple style="display:none">
-          <input id="genAudioFile" type="file" accept="audio/*" style="display:none">
-          <div class="cbtns" style="margin-top:8px"><label for="genImgFile" class="tbtn" style="padding:8px 12px;cursor:pointer">📎 Image</label><label for="genAudioFile" class="tbtn" style="padding:8px 12px;cursor:pointer">🎵 Audio</label><button class="tbtn micbtn" id="genMic" title="record voice" style="padding:8px 12px">🎤</button><button class="btn-ghost" id="writeBtn">Write prompt</button><button class="btn-solid" id="genBtn" style="background:var(--sec)">Generate</button><span class="hint" id="genHint"></span></div>
-        </div>
       </div>
     </main>
 
     <aside id="refDock" class="refdock hide">
       <div class="refdock-h">Gallery<input id="refFile" type="file" accept="image/*,video/*" multiple style="display:none"><label for="refFile" class="tbtn" style="margin-left:auto;padding:3px 9px;font-size:10px;cursor:pointer;display:inline-block">+ Add</label><button class="x" id="refClose" style="margin-left:6px">✕</button></div>
       <div class="galtabs"><button class="galtab on" id="galTabImg" data-t="image">Images</button><button class="galtab" id="galTabVid" data-t="video">Videos</button></div>
-      <div class="galtools"><button class="galtool" id="galNewFolder">+ Folder</button><select class="galtool" id="galSortSel" title="sort within folders"><option value="new">Newest</option><option value="old">Oldest</option></select><span class="galtoolhint">click an image → send to Chat / Image / Video · select, then Move to folder</span></div>
+      <div class="galtools"><button class="galtool" id="galNewFolder">+ Folder</button><select class="galtool" id="galSortSel" title="sort within folders"><option value="new">Newest</option><option value="old">Oldest</option></select><span class="galtoolhint">click media → send to Chat or the Board · select, then Move to folder</span></div>
       <div class="refwall" id="refWall"></div>
       <div class="galbar" id="galBar" style="display:none"></div>
     </aside>
@@ -563,7 +556,13 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
   <div style="margin-top:14px"><button class="btn-solid" id="npSave">Save</button></div>
 </div></div></div>
 
+<div id="projModal" class="modal hide"><div class="modal-card sm"><div class="modal-h">Projects <span class="cnt" id="projCount" style="margin-left:6px">0</span><div class="sp"></div><button class="x" id="projClose">✕</button></div><div class="modal-b">
+  <div class="hintline" style="padding:0 0 8px">click a chat project to open it in the Dual Mind panel · ✎ rename · 🗑 delete</div>
+  <div id="projList"></div>
+  <div style="margin-top:12px"><button class="btn-wide" id="newProjBtn">+ New project</button></div>
+</div></div></div>
+
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=52"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>
