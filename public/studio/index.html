@@ -313,7 +313,7 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .cvport{position:absolute;right:-13px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;
   background:linear-gradient(135deg,var(--pri-hi),#5468d4);color:#fff;font-size:15px;line-height:26px;text-align:center;
   cursor:crosshair;box-shadow:var(--sh-1);opacity:0;transition:opacity .15s,transform .15s;z-index:2}
-.cvnode.image:hover .cvport{opacity:1}
+.cvnode:hover .cvport{opacity:1}
 .cvport:hover{transform:translateY(-50%) scale(1.15)}
 .cvnode.prompt{padding:8px;cursor:grab}
 .cvnode.prompt:active{cursor:grabbing}
@@ -361,6 +361,9 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .cvapi.ac{color:#ffb46e;border:1px solid rgba(255,180,110,.4);background:rgba(255,180,110,.08)}
 .cvapi.oa{color:#7fe0b2;border:1px solid rgba(127,224,178,.4);background:rgba(127,224,178,.08)}
 .cviprov{border-color:color-mix(in srgb,var(--pri) 45%,var(--line))!important;color:var(--pri-hi);font-weight:600}
+/* v52: bounded inner layout — text areas fill the node and can't balloon it */
+.cvnode .cvtext{width:100%;display:block;resize:vertical;min-height:56px;max-height:240px}
+.cvphead select{min-width:0}
 /* v51: corner resize grip on every node */
 .cvrz{position:absolute;right:-2px;bottom:-2px;width:16px;height:16px;cursor:nwse-resize;z-index:3;
   background:linear-gradient(135deg,transparent 50%,var(--line2) 50%);border-bottom-right-radius:10px;opacity:0;transition:opacity .15s}
@@ -561,6 +564,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=51"></script>
+<script src="app.js?v=52"></script>
 </body>
 </html>

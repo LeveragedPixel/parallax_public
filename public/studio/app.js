@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 51; // v51: resizable nodes, double-click to place blank nodes, Venice reference-to-video aspect fix
+const BUILD = 52; // v52: drag-off handle visible on ALL nodes (chat→image/video), sane resize minimums, bounded text areas
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1447,7 +1447,8 @@ function cvPointerMove(e) {
   if (!cvDrag) return;
   if (cvDrag.rz) {
     const p = cvWorldPt(e);
-    cvDrag.rz.w = Math.round(Math.max(180, Math.min(820, p.x - cvDrag.rz.x)));
+    const minW = (cvDrag.rz.kind === "image" || cvDrag.rz.kind === "video") ? 180 : 300;
+    cvDrag.rz.w = Math.round(Math.max(minW, Math.min(820, p.x - cvDrag.rz.x)));
     const el = cvEls[cvDrag.rz.id]; if (el) el.style.width = cvDrag.rz.w + "px";
     cvDrag.moved = true; cvDrawEdges(); return;
   }
