@@ -418,6 +418,23 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .cp-foot{padding:8px 12px 10px;border-top:1px solid var(--line)}
 #chatToggle.on{color:var(--pri-hi);border-color:color-mix(in srgb,var(--pri) 45%,var(--line));background:color-mix(in srgb,var(--pri) 10%,transparent);font-weight:700}
 #projList{display:flex;flex-direction:column}
+
+/* ---- v54: reference drop-spot on video generator nodes ---- */
+.cvrefzone{display:flex;align-items:center;gap:6px;margin:6px 8px 0;padding:7px 9px;border:1.5px dashed var(--line2);border-radius:8px;font-size:10.5px;color:var(--faint);cursor:default;transition:border-color .15s,background .15s,color .15s}
+.cvrefzone .ic{font-size:12px;opacity:.9}
+.cvrefzone .lb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cvrefzone u{cursor:pointer;color:var(--dim)}
+.cvrefzone u:hover{color:var(--pri-hi)}
+.cvrefzone.over{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 10%,transparent);color:var(--txt)}
+.cvrefchips{display:flex;flex-wrap:wrap;gap:5px;margin:5px 8px 2px}
+.cvrefchips:empty{display:none}
+.cvrefchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line2);border-radius:999px;padding:2px 7px 2px 3px;font-size:10px;color:var(--dim);background:var(--panel2);max-width:100%}
+.cvrefchip img{width:22px;height:22px;object-fit:cover;border-radius:999px;display:block}
+.cvrefchip.aud{padding-left:7px}
+.cvrefchip .nm{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cvrefchip.lost{opacity:.55;border-style:dashed}
+.cvrefchip .x{background:transparent;color:var(--faint);padding:0 2px;font-size:10px;cursor:pointer}
+.cvrefchip .x:hover{color:var(--red)}
 </style>
 </head>
 <body>
@@ -563,6 +580,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=53"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>

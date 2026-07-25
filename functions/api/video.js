@@ -29,6 +29,8 @@ export async function onRequestPost(context) {
   const { projectId, brief, imageUrl } = body || {};
   const opts = body.options || {};
   const videos = Array.isArray(body.videos) ? body.videos.filter((v) => v && v.url) : []; // video-to-video references
+  // Reference audio (music) — Seedance R2V only: ≤3 clips, 2–15s each, ≤15s combined (Venice's limits).
+  const audios = Array.isArray(body.audio) ? body.audio.filter((a) => a && a.url).slice(0, 3) : [];
   if (!brief && !imageUrl && !videos.length) return json({ error: "brief, image, or video reference required" }, 400);
 
   const user = userFromToken(token);
@@ -67,6 +69,7 @@ export async function onRequestPost(context) {
   if (body.promptOnly) return json({ ok: true, stage: "prompt", promptYaml: yaml, promptChinese: yamlZh });
 
   if (provider === "artcraft") {
+    if (audios.length) return json({ error: "Audio references only render on Venice (Seedance reference→video) — switch this node's API to Venice.", promptYaml: yaml });
     if (!keys.artcraft || !keys.artcraftBase) return json({ ok: true, stage: "prompt", promptYaml: yaml, promptChinese: yamlZh, note: "ArtCraft not fully connected — add its key + base URL in Connections." });
     try {
       // Map the UI's friendly values -> ArtCraft's exact enums (from api.json).
@@ -94,8 +97,8 @@ export async function onRequestPost(context) {
   // Step 2 — queue the render (Venice).
   try {
     let model = opts.model || settings.model || "seedance-2-0-text-to-video";
-    // A video reference only works on the reference-to-video variant — auto-route there.
-    if (videos.length && !/reference/.test(String(model).toLowerCase())) {
+    // Audio refs and multi-image refs only work on the reference-to-video variant — auto-route there.
+    if ((videos.length || audios.length || imgs.length + (imageUrl ? 1 : 0) > 1) && !/reference/.test(String(model).toLowerCase())) {
       model = /fast/.test(String(model).toLowerCase()) ? "seedance-2-0-fast-reference-to-video" : "seedance-2-0-reference-to-video";
     }
     const m = String(model).toLowerCase();
@@ -121,6 +124,15 @@ export async function onRequestPost(context) {
       refVideoTotal = videos.slice(0, 3).reduce((s, v) => s + (Number(v.duration) || 0), 0);
       if (refVideoTotal > 0) params.reference_video_total_duration = Math.round(refVideoTotal);
     }
+    // Reference audio: Venice rejects audio-only submissions — it needs an image or clip to ground it.
+    let audTotal = 0;
+    if (audios.length) {
+      if (!dataUrls.length && !videos.length) return json({ error: "Venice needs at least one image or video reference alongside audio — connect an image to this node or drop one in its ref spot." });
+      params.reference_audio_urls = audios.map((a) => a.url);
+      audTotal = audios.reduce((t, a) => t + (Number(a.duration) || 0), 0);
+      if (audTotal > 15) return json({ error: "Audio references total " + Math.round(audTotal) + "s — Venice caps combined reference audio at 15s. Trim the clip(s)." });
+    }
+
     // NOTE: `negative_prompt` / `generate_audio` are NOT in Venice's documented video API and
     // were causing the queue call to fail — removed until confirmed. (Audio is on by default on
     // Seedance anyway.) If you want a negative, fold it into the prompt for now.
@@ -146,10 +158,10 @@ export async function onRequestPost(context) {
     // Guard: large inline base64 refs blow the Worker's CPU/memory budget (JSON.stringify) →
     // Cloudflare kills the isolate and returns an HTML 502. Reject cleanly instead of crashing.
     const inlineBytes = (arr) => (arr || []).reduce((s, u) => s + (typeof u === "string" && /^data:/.test(u) ? Math.floor(u.length * 0.75) : 0), 0);
-    const refBytes = inlineBytes(params.reference_video_urls) + inlineBytes(params.reference_image_urls) + inlineBytes(params.image_url ? [params.image_url] : []);
+    const refBytes = inlineBytes(params.reference_video_urls) + inlineBytes(params.reference_image_urls) + inlineBytes(params.reference_audio_urls) + inlineBytes(params.image_url ? [params.image_url] : []);
     if (refBytes > 4000000) return json({ error: "Reference media is too large to send inline (~" + (refBytes / 1e6).toFixed(1) + " MB). Use a clip/image generated in Parallax (referenced by URL), or a smaller file.", promptYaml: yaml }, 413);
 
-    console.log("[video] queue start", model, "refImgs", (params.reference_image_urls || []).length, "refVids", (params.reference_video_urls || []).length, "promptLen", (params.prompt || "").length);
+    console.log("[video] queue start", model, "refImgs", (params.reference_image_urls || []).length, "refVids", (params.reference_video_urls || []).length, "refAud", (params.reference_audio_urls || []).length, "promptLen", (params.prompt || "").length);
     const q = await veniceVideoQueue(keys.venice, params);
     console.log("[video] queued ok", q && q.job);
 

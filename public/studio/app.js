@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 53; // v53: Space-first — one stage, collapsible Dual Mind chat panel, Projects popover, no Image/Video tabs
+const BUILD = 54; // v54: video nodes get a visible ref drop-spot — images + audio (music) ride into Seedance reference→video
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -879,7 +879,16 @@ function cvLoad() { if (!cv) cv = { nodes: [], edges: [], pan: { x: 60, y: 40 },
 // Slim a board for storage: layout + gallery ids + text only. Inline image data drops
 // out (it reloads from the gallery by id); a video's remote URL is kept, a data: URL is not.
 function cvSlim() {
-  return { ...cv, updatedAt: Date.now(), nodes: cv.nodes.map((n) => { const { dataUrl, src, busy, ...keep } = n; if (src && !/^data:/.test(src)) keep.src = src; return keep; }) };
+  return { ...cv, updatedAt: Date.now(), nodes: cv.nodes.map((n) => {
+    const { dataUrl, src, busy, ...keep } = n; if (src && !/^data:/.test(src)) keep.src = src;
+    // Ref attachments: image refs rehydrate from the gallery; audio has no server home,
+    // so only its label survives a reload (the chip says to re-drop it).
+    if (keep.refs) keep.refs = {
+      imgs: (keep.refs.imgs || []).filter((r) => r.galleryId).map((r) => ({ galleryId: r.galleryId })),
+      aud: (keep.refs.aud || []).map((r) => ({ name: r.name, dur: r.dur })),
+    };
+    return keep;
+  }) };
 }
 /* Boards live in KV (/api/boards) so they follow the account onto any computer.
    Saves are debounced; a localStorage cache covers the debounce window if the tab
@@ -1030,7 +1039,8 @@ function cvAddNodeEl(n) {
            <select class="cvres" title="resolution">${["1080p", "720p", "480p"].map((r) => `<option ${r === (n.res || "720p") ? "selected" : ""}>${r}</option>`).join("")}</select>
            <select class="cvaspect" title="aspect ratio (ignored when a source image/clip sets it)">${["16:9", "9:16", "1:1"].map((a) => `<option ${a === (n.aspect || "16:9") ? "selected" : ""}>${a}</option>`).join("")}</select>`}
         <button class="btn-solid cvgen">Generate</button><span class="cvstat"></span>
-      </div>`;
+      </div>
+      ${out === "video" ? `<div class="cvrefzone" title="Seedance reference→video (Venice): up to 9 images + 3 audio clips (2–15s each, ≤15s of audio total, wav/mp3). Audio needs at least one image or clip alongside it."><span class="ic">🖼</span><span class="ic">🎵</span><span class="lb">drop image / audio refs — or <u class="cvrefpick">browse</u></span></div><div class="cvrefchips"></div>` : ""}`;
     const ta = el.querySelector(".cvtext");
     ta.oninput = () => { n.text = ta.value; clearTimeout(el._t); el._t = setTimeout(cvSave, 500); };
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cvGenerate(n.id); } };
@@ -1057,6 +1067,7 @@ function cvAddNodeEl(n) {
     const cr = el.querySelector(".cvres"); if (cr) cr.onchange = (e) => { n.res = e.target.value; cvSave(); };
     el.querySelector(".cvaspect").onchange = (e) => { n.aspect = e.target.value; cvSave(); };
     el.querySelector(".cvgen").onclick = () => cvGenerate(n.id);
+    if (out === "video") cvWireRefZone(n, el);
   }
   el.querySelector(".cvx").onclick = () => cvRemove(n.id);
   const rz = document.createElement("div"); rz.className = "cvrz"; rz.title = "drag to resize";
@@ -1064,6 +1075,97 @@ function cvAddNodeEl(n) {
   cvSkillsRow(n, el);
   $("cvNodes").appendChild(el); cvEls[n.id] = el;
   return el;
+}
+/* ---- reference drop-spot on video generator nodes (v54) ----
+   The visible "can I attach here?" surface: images (up to 9) and music/audio
+   (wav/mp3, 2–15s each, ≤15s combined — Venice's Seedance limits) ride the
+   generation as reference_image_urls / reference_audio_urls. */
+function cvRefs(n) { if (!n.refs) n.refs = { imgs: [], aud: [] }; n.refs.imgs = n.refs.imgs || []; n.refs.aud = n.refs.aud || []; return n.refs; }
+function audioDuration(dataUrl) {
+  return new Promise((res) => {
+    const a = new Audio(); a.preload = "metadata";
+    a.onloadedmetadata = () => res(isFinite(a.duration) && a.duration > 0 ? a.duration : 0);
+    a.onerror = () => res(0);
+    a.src = dataUrl;
+    setTimeout(() => res(0), 8000);
+  });
+}
+async function cvAddRefFiles(n, files) {
+  const refs = cvRefs(n);
+  let added = 0;
+  for (const f of [...files]) {
+    if (!f || !f.type) continue;
+    if (f.type.startsWith("image/")) {
+      if (refs.imgs.length >= 9) { toast("max 9 image refs"); continue; }
+      try {
+        const a = await shrinkAtt(await fileToImg(f));
+        const r = { dataUrl: a.dataUrl, galleryId: null };
+        refs.imgs.push(r); added++;
+        api("/api/gallery", { dataUrl: a.dataUrl, name: "video ref" }).then((d) => { if (d && d.entry && d.entry.id) { r.galleryId = d.entry.id; cvSave(); } }).catch(() => {});
+      } catch { toast("couldn't read " + (f.name || "image")); }
+    } else if (f.type.startsWith("audio/") || /\.(wav|mp3)$/i.test(f.name || "")) {
+      if (!/wav|mpeg|mp3/i.test(f.type)) { toast((f.name || "audio") + ": Venice takes .wav or .mp3 only"); continue; }
+      if (refs.aud.length >= 3) { toast("max 3 audio refs"); continue; }
+      if (f.size > 3500000) { toast((f.name || "audio") + ": too big to send inline (~" + (f.size / 1e6).toFixed(1) + " MB) — trim it to ≤15s first"); continue; }
+      try {
+        const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+        const dur = await audioDuration(dataUrl);
+        if (dur && (dur < 2 || dur > 15)) { toast((f.name || "audio") + " is " + Math.round(dur) + "s — Venice takes 2–15s clips. Trim it."); continue; }
+        const total = refs.aud.reduce((t, a) => t + (a.dur || 0), 0) + (dur || 0);
+        if (total > 15) { toast("audio refs total " + Math.round(total) + "s — Venice caps combined audio at 15s"); continue; }
+        refs.aud.push({ dataUrl, name: (f.name || "audio").slice(0, 40), dur: dur ? Math.round(dur * 10) / 10 : 0 }); added++;
+      } catch { toast("couldn't read " + (f.name || "audio")); }
+    }
+  }
+  if (added) { cvSave(); const el = cvEls[n.id]; if (el) cvRenderRefs(n, el); }
+  return added;
+}
+function cvRenderRefs(n, el) {
+  const box = el.querySelector(".cvrefchips"); if (!box) return;
+  const refs = cvRefs(n); box.innerHTML = "";
+  refs.imgs.forEach((r, i) => {
+    const c = document.createElement("span"); c.className = "cvrefchip img";
+    c.innerHTML = (r.dataUrl ? `<img src="${r.dataUrl}">` : "🖼") + `<button class="x" title="remove">✕</button>`;
+    c.title = "image reference " + (i + 1);
+    c.querySelector(".x").onclick = () => { refs.imgs.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
+    box.appendChild(c);
+  });
+  refs.aud.forEach((r, i) => {
+    const lost = !r.dataUrl;
+    const c = document.createElement("span"); c.className = "cvrefchip aud" + (lost ? " lost" : "");
+    c.innerHTML = `🎵 <span class="nm">${esc(r.name || "audio")}</span>${r.dur ? ` · ${r.dur}s` : ""}${lost ? " — re-drop" : ""}<button class="x" title="remove">✕</button>`;
+    c.title = lost ? "audio doesn't survive a reload — drop the file again" : "audio reference (steers Seedance's music / beat / lip-sync)";
+    c.querySelector(".x").onclick = () => { refs.aud.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
+    box.appendChild(c);
+  });
+}
+function cvWireRefZone(n, el) {
+  const zone = el.querySelector(".cvrefzone"); if (!zone) return;
+  cvRenderRefs(n, el);
+  zone.querySelector(".cvrefpick").onclick = (e) => {
+    e.stopPropagation();
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*,audio/wav,audio/mpeg,.wav,.mp3"; inp.multiple = true;
+    inp.onchange = () => cvAddRefFiles(n, inp.files);
+    inp.click();
+  };
+  ["dragenter", "dragover"].forEach((ev) => el.addEventListener(ev, (e) => {
+    if ([...(e.dataTransfer ? e.dataTransfer.types : [])].some((t) => t === "Files" || t === "application/x-plx-media")) { e.preventDefault(); e.stopPropagation(); zone.classList.add("over"); }
+  }));
+  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) zone.classList.remove("over"); });
+  el.addEventListener("drop", async (e) => {
+    e.preventDefault(); e.stopPropagation(); zone.classList.remove("over");
+    const plx = e.dataTransfer.getData("application/x-plx-media");
+    if (plx) {
+      try {
+        const item = JSON.parse(plx);
+        if (item.type === "video") { toast("clips connect as a source — drag the board node's ＋ handle instead"); return; }
+        const att = await srcToImgAtt(item.src);
+        if (att) { const refs = cvRefs(n); if (refs.imgs.length >= 9) { toast("max 9 image refs"); return; } const r = { dataUrl: att.dataUrl, galleryId: item.id || null }; refs.imgs.push(r); cvSave(); cvRenderRefs(n, el); toast("image ref added"); return; }
+      } catch {}
+    }
+    const got = await cvAddRefFiles(n, (e.dataTransfer && e.dataTransfer.files) || []);
+    if (!got) toast("drop an image, a .wav, or an .mp3 here");
+  });
 }
 function cvWireMedia(n, el) {
   const img = el.querySelector("img");
@@ -1337,7 +1439,10 @@ async function cvGenerate(nid) {
   try {
     if (stat) stat.textContent = "reading source…";
     const src = await cvSourceFor(n);
-    if (!text && !src.att && !src.videoNode) throw new Error("describe what to generate, or connect this to an image/clip");
+    const nrefs = n.refs || {};
+    const refImgs = (nrefs.imgs || []).filter((r) => r.dataUrl);
+    const refAud = (nrefs.aud || []).filter((r) => r.dataUrl);
+    if (!text && !src.att && !src.videoNode && !refImgs.length) throw new Error("describe what to generate, connect this to an image/clip, or drop a ref in the spot");
     // Prompt-writing happens behind the scenes on the top-bar Claude model — the box
     // itself only exposes generation choices (per Pixel: LLM picks live on Text nodes).
     if (stat) stat.textContent = "writing prompt…";
@@ -1376,8 +1481,18 @@ async function cvGenerate(nid) {
       // aspect always rides along: video.js drops it for first-frame i2v (Venice rejects it
       // there) but reference-to-video and text-to-video REQUIRE it (Venice 400s without it).
       const req = { brief: text || "animate the source", prewritten: prompt, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p", aspect_ratio: n.aspect || "16:9" } };
-      if (src.att) req.images = [{ media_type: src.att.media_type, data: src.att.data }];
-      else if (src.videoNode && src.videoNode.src && !/^data:/.test(src.videoNode.src)) req.videos = [{ url: src.videoNode.src, duration: src.videoNode.duration || 0 }];
+      // Source image (from the parent chain) + dropped image refs all ride along;
+      // the backend routes to Seedance reference→video when more than one is present.
+      const imgAtts = [];
+      if (src.att) imgAtts.push(src.att);
+      for (const r of refImgs) { const a = dataUrlToAtt(r.dataUrl); if (a) imgAtts.push(await shrinkAtt(a)); }
+      if (imgAtts.length) req.images = imgAtts.slice(0, 9).map((a) => ({ media_type: a.media_type, data: a.data }));
+      if (src.videoNode && src.videoNode.src && !/^data:/.test(src.videoNode.src)) req.videos = [{ url: src.videoNode.src, duration: src.videoNode.duration || 0 }];
+      if (refAud.length) {
+        if ((n.vprov || "venice") !== "venice") throw new Error("audio references render on Venice (Seedance reference→video) — switch this node's API to Venice");
+        if (!imgAtts.length && !req.videos) throw new Error("Venice needs an image or clip alongside audio — connect one to this node or drop an image in the ref spot");
+        req.audio = refAud.slice(0, 3).map((r) => ({ url: r.dataUrl, duration: r.dur || 0 }));
+      }
       await cvVideoSubmit(n, req);
     }
   } catch (e) {
@@ -1451,6 +1566,7 @@ function cvRebuildAll() {
   $("cvNodes").innerHTML = ""; for (const k in cvEls) delete cvEls[k];
   for (const n of cv.nodes) cvAddNodeEl(n);
   cvApply(); cvDrawEdges(); cvEmptyUpd();
+  cvHydrateRefs();
   for (const n of cv.nodes) {
     const needsImg = n.kind === "image" && !n.dataUrl && n.galleryId;
     const needsVid = n.kind === "video" && !n.src && n.galleryId;
@@ -1462,6 +1578,15 @@ function cvRebuildAll() {
         cvRebuildNode(n);
       })
       .catch(() => { const el = cvEls[n.id]; if (el) { const w = el.querySelector(".cvimgwrap"); if (w) w.innerHTML = '<div class="cvmissing">missing — deleted from gallery?</div>'; } });
+  }
+}
+function cvHydrateRefs() {
+  for (const n of cv.nodes) {
+    const imgs = (n.refs && n.refs.imgs) || [];
+    if (n.kind !== "prompt" || !imgs.some((r) => !r.dataUrl && r.galleryId)) continue;
+    Promise.all(imgs.map((r) => (!r.dataUrl && r.galleryId)
+      ? api("/api/gallery?id=" + encodeURIComponent(r.galleryId)).then((it) => { r.dataUrl = it.dataUrl || it.url || ""; }).catch(() => {})
+      : null)).then(() => { const el = cvEls[n.id]; if (el) cvRenderRefs(n, el); });
   }
 }
 function cvNormalize(doc) {
