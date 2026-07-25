@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 44; // v44: boards live in KV — named boards that follow the account to any computer
+const BUILD = 45; // v45: est-spend meter replaced with dollars-left balances (Venice live; Claude/GPT set-once + counted down, KV-synced)
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -178,11 +178,44 @@ function priceFor(model) {
   if (/gpt|chatgpt|^o[0-9]/.test(m)) return { in: 2.5, out: 10 };
   return { in: 3, out: 15 };
 }
-function addSpend(model, inTok, outTok) { const p = priceFor(model); sessionSpend += (inTok / 1e6) * p.in + (outTok / 1e6) * p.out; updateMeters(); }
+/* Account balances (v45): Venice reports a real balance over its API; Anthropic and
+   OpenAI expose none to API keys — so for those, the user sets their credit balance
+   in Connections and the studio counts down from it using real token usage, synced
+   to the account (/api/balances) so it follows any computer. */
+let acctBal = { anthropic: null, openai: null };
+let _balTimer = {};
+async function loadBalances() {
+  try {
+    const d = await api("/api/balances");
+    const b = d.balances || {};
+    acctBal.anthropic = b.anthropic && b.anthropic.usd != null ? Number(b.anthropic.usd) : null;
+    acctBal.openai = b.openai && b.openai.usd != null ? Number(b.openai.usd) : null;
+  } catch {}
+  updateMeters();
+}
+function pushBalance(provider) {
+  clearTimeout(_balTimer[provider]);
+  _balTimer[provider] = setTimeout(() => { api("/api/balances", { provider, usd: acctBal[provider] }).catch(() => {}); }, 1500);
+}
+function addSpend(model, inTok, outTok) {
+  const p = priceFor(model);
+  const cost = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
+  sessionSpend += cost;
+  const prov = /gpt|chatgpt|^o[0-9]/.test((model || "").toLowerCase()) ? "openai" : "anthropic";
+  if (acctBal[prov] != null) { acctBal[prov] = Math.max(0, acctBal[prov] - cost); pushBalance(prov); }
+  updateMeters();
+}
+const fmtUsd = (v) => "$" + Number(v).toFixed(2);
 function updateMeters() {
-  const spend = sessionSpend < 1 ? sessionSpend.toFixed(4) : sessionSpend.toFixed(2);
-  const parts = [`<span title="estimated Claude+GPT spend this session">est. spend <b>$${spend}</b></span>`];
-  if (veniceUsd != null) parts.push(`<span title="Venice balance remaining">venice <b>$${veniceUsd.toFixed(2)}</b> left</span>`);
+  const parts = [];
+  const balHint = "counted down from the balance you set in Connections (these providers don't expose balances to API keys) — click Connections to re-sync";
+  parts.push(acctBal.anthropic != null
+    ? `<span title="${balHint}">claude <b>${fmtUsd(acctBal.anthropic)}</b> left</span>`
+    : `<span title="Anthropic doesn't expose your balance via API — set it once in Connections and the studio counts down from real usage" style="opacity:.7">claude — set balance</span>`);
+  parts.push(acctBal.openai != null
+    ? `<span title="${balHint}">gpt <b>${fmtUsd(acctBal.openai)}</b> left</span>`
+    : `<span title="OpenAI doesn't expose your balance via API — set it once in Connections and the studio counts down from real usage" style="opacity:.7">gpt — set balance</span>`);
+  if (veniceUsd != null) parts.push(`<span title="Venice balance remaining — live from the Venice API">venice <b>$${veniceUsd.toFixed(2)}</b> left</span>`);
   // ArtCraft credits remaining (only meaningful once its server-side wall clears).
   if (artcraftState === "connected" && artcraftCredits != null) parts.push(`<span title="ArtCraft credits remaining">artcraft <b>${fmtCredits(artcraftCredits)}</b> left</span>`);
   else if (artcraftState === "connected") parts.push(`<span title="ArtCraft is connected but its credit balance can't be read server-side yet">artcraft <b>connected</b></span>`);
@@ -238,7 +271,7 @@ async function showApp() {
   // or re-login lands you right back where you were.
   try { const saved = JSON.parse(localStorage.getItem("plx-cols") || "[]"); openCols = saved.filter((id) => projects.some((p) => p.id === id)).slice(0, 3); } catch { openCols = []; }
   await Promise.all([...openCols, "__raw"].map(loadConvo));
-  setMode("chat"); loadCredits(); loadStatus();
+  setMode("chat"); loadCredits(); loadStatus(); loadBalances();
 }
 
 /* modes */
@@ -1738,6 +1771,20 @@ $("infoClose").onclick = () => hide("infoModal");
 $("connBtn").onclick = openConnections; $("connClose").onclick = () => hide("connModal");
 $("anthropicSave").onclick = () => saveProviderKey("anthropic", "anthropicKey");
 $("openaiSave").onclick = () => saveProviderKey("openai", "openaiKey");
+/* v45: user-set credit balances (Anthropic/OpenAI expose none via API) */
+async function setAcctBalance(provider, inputId) {
+  const v = $(inputId).value.trim();
+  if (v === "") return;
+  const usd = Number(v);
+  if (!Number.isFinite(usd) || usd < 0) { toast("enter the dollar amount left on the account"); return; }
+  try {
+    await api("/api/balances", { provider, usd });
+    acctBal[provider] = usd; updateMeters(); $(inputId).value = "";
+    toast((provider === "anthropic" ? "Claude" : "GPT") + " balance set — the meter counts down from here");
+  } catch { toast("couldn't save the balance"); }
+}
+$("anthropicBalSave").onclick = () => setAcctBalance("anthropic", "anthropicBal");
+$("openaiBalSave").onclick = () => setAcctBalance("openai", "openaiBal");
 $("veniceSave").onclick = () => saveProviderKey("venice", "veniceKey");
 $("artcraftSave").onclick = async () => {
   const key = $("artcraftKey").value.trim(), base = $("artcraftBase").value.trim(); if (!key && !base) return;
