@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 55; // v55: gallery docks right again, projects⇄boards linked, spend meters count EVERYTHING (+ real org spend via admin keys)
+const BUILD = 56; // v56: Gallery button joins Dual Mind + Projects in the workspace cluster
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
