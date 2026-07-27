@@ -520,7 +520,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
           </div>
         </div>
       </div>
-      </div>
     </main>
 
     <aside id="refDock" class="refdock hide">
@@ -553,10 +552,12 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
   <div class="flabel">Claude — Anthropic <span style="color:var(--faint);text-transform:none;letter-spacing:0">(optional — overrides server key)</span></div>
   <div class="krow"><input id="anthropicKey" type="password" placeholder="sk-ant-…" /><button class="btn-solid" id="anthropicSave">Save</button></div><div class="status" id="anthropicStatus"></div>
   <div class="krow" style="margin-top:6px"><input id="anthropicBal" type="number" step="0.01" min="0" placeholder="credits remaining (USD) — from console.anthropic.com" /><button class="btn-ghost" id="anthropicBalSave">Set balance</button></div>
+  <div class="krow" style="margin-top:6px"><input id="anthropicAdminKey" type="password" placeholder="ADMIN key (sk-ant-admin…) — unlocks LIVE month spend" /><button class="btn-ghost" id="anthropicAdminSave">Save admin</button></div><div class="status" id="anthropicAdminStatus"></div>
   <div class="hintline" style="padding:0">Anthropic doesn't expose your balance via API — set it here and the meter counts down from real usage. Re-sync anytime.</div>
   <div class="flabel" style="margin-top:16px">ChatGPT — OpenAI <span style="color:var(--faint);text-transform:none;letter-spacing:0">(optional — overrides server key)</span></div>
   <div class="krow"><input id="openaiKey" type="password" placeholder="sk-…" /><button class="btn-solid" id="openaiSave">Save</button></div><div class="status" id="openaiStatus"></div>
   <div class="krow" style="margin-top:6px"><input id="openaiBal" type="number" step="0.01" min="0" placeholder="credits remaining (USD) — from platform.openai.com" /><button class="btn-ghost" id="openaiBalSave">Set balance</button></div>
+  <div class="krow" style="margin-top:6px"><input id="openaiAdminKey" type="password" placeholder="ADMIN key (org owner → Admin keys) — unlocks LIVE month spend" /><button class="btn-ghost" id="openaiAdminSave">Save admin</button></div><div class="status" id="openaiAdminStatus"></div>
   <div class="hintline" style="padding:0">OpenAI doesn't expose your balance via API either — same countdown approach.</div>
   <div class="flabel" style="margin-top:16px">Venice — image + video (Seedance 2.0)</div>
   <div class="krow"><input id="veniceKey" type="password" placeholder="paste Venice API key" /><button class="btn-solid" id="veniceSave">Save</button></div><div class="status" id="veniceStatus">not connected</div>
@@ -580,6 +581,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=54"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>

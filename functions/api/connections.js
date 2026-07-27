@@ -7,7 +7,7 @@ import { verifyToken } from "./_verify.js";
 import { tokenFrom, userFromToken } from "./_session.js";
 import { getKeys, saveKey, veniceBalance, artcraftBalance } from "./_providers.js";
 
-const PROVIDERS = ["venice", "artcraft", "anthropic", "openai"];
+const PROVIDERS = ["venice", "artcraft", "anthropic", "openai", "anthropic_admin", "openai_admin"];
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -34,8 +34,8 @@ export async function onRequestGet(context) {
   return json({
     ok: true,
     providers: {
-      anthropic: { connected: !!keys.anthropic },
-      openai: { connected: !!keys.openai },
+      anthropic: { connected: !!keys.anthropic, admin: !!keys.anthropicAdmin },
+      openai: { connected: !!keys.openai, admin: !!keys.openaiAdmin },
       venice: { connected: !!keys.venice, balance: veniceBal },
       artcraft: { connected: !!keys.artcraft, baseSet: !!keys.artcraftBase, balance: artcraftBal },
     },

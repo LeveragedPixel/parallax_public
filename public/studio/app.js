@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 54; // v54: video nodes get a visible ref drop-spot — images + audio (music) ride into Seedance reference→video
+const BUILD = 55; // v55: gallery docks right again, projects⇄boards linked, spend meters count EVERYTHING (+ real org spend via admin keys)
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -145,6 +145,25 @@ function pushBalance(provider) {
   clearTimeout(_balTimer[provider]);
   _balTimer[provider] = setTimeout(() => { api("/api/balances", { provider, usd: acctBal[provider] }).catch(() => {}); }, 1500);
 }
+// Month-to-date org spend pulled from the providers' cost APIs (needs admin keys).
+let orgSpend = { anthropic: null, openai: null, anthropicErr: null, openaiErr: null };
+async function loadSpend() {
+  try {
+    const d = await api("/api/spend");
+    orgSpend.anthropic = d.anthropic && d.anthropic.monthUsd != null ? Number(d.anthropic.monthUsd) : null;
+    orgSpend.openai = d.openai && d.openai.monthUsd != null ? Number(d.openai.monthUsd) : null;
+    orgSpend.anthropicErr = (d.anthropic && d.anthropic.error) || null;
+    orgSpend.openaiErr = (d.openai && d.openai.error) || null;
+  } catch {}
+  updateMeters();
+}
+// Non-token costs (image renders) — same countdown path as token usage.
+function addFlatSpend(provider, usd) {
+  if (!usd) return;
+  sessionSpend += usd;
+  if (acctBal[provider] != null) { acctBal[provider] = Math.max(0, acctBal[provider] - usd); pushBalance(provider); }
+  updateMeters();
+}
 function addSpend(model, inTok, outTok) {
   const p = priceFor(model);
   const cost = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
@@ -154,15 +173,22 @@ function addSpend(model, inTok, outTok) {
   updateMeters();
 }
 const fmtUsd = (v) => "$" + Number(v).toFixed(2);
+const fmtSpend = (v) => "$" + (v >= 1 ? v.toFixed(2) : v.toFixed(3));
 function updateMeters() {
   const parts = [];
-  const balHint = "counted down from the balance you set in Connections (these providers don't expose balances to API keys) — click Connections to re-sync";
-  parts.push(acctBal.anthropic != null
-    ? `<span title="${balHint}">claude <b>${fmtUsd(acctBal.anthropic)}</b> left</span>`
-    : `<span title="Anthropic doesn't expose your balance via API — set it once in Connections and the studio counts down from real usage" style="opacity:.7">claude — set balance</span>`);
-  parts.push(acctBal.openai != null
-    ? `<span title="${balHint}">gpt <b>${fmtUsd(acctBal.openai)}</b> left</span>`
-    : `<span title="OpenAI doesn't expose your balance via API — set it once in Connections and the studio counts down from real usage" style="opacity:.7">gpt — set balance</span>`);
+  const balHint = (p) => `counted down from the balance you set in Connections — every panel chat, board ask, prompt-write and render is charged. Exact: $${(acctBal[p] || 0).toFixed(4)}`;
+  // REAL month-to-date spend straight from the provider (admin key in Connections).
+  if (orgSpend.anthropic != null) parts.push(`<span title="Anthropic org spend this month — live from the cost API">claude spent <b>${fmtSpend(orgSpend.anthropic)}</b> this mo</span>`);
+  else if (orgSpend.anthropicErr) parts.push(`<span title="${esc(orgSpend.anthropicErr)}" style="color:var(--red);opacity:.8">claude spend ⚠</span>`);
+  else parts.push(acctBal.anthropic != null
+    ? `<span title="${balHint("anthropic")}">claude <b>${fmtUsd(acctBal.anthropic)}</b> left</span>`
+    : `<span title="For LIVE spend, add an Anthropic ADMIN key in Connections. Or set a balance and the studio counts down from real usage." style="opacity:.7">claude — set balance</span>`);
+  if (orgSpend.openai != null) parts.push(`<span title="OpenAI org spend this month — live from the cost API">gpt spent <b>${fmtSpend(orgSpend.openai)}</b> this mo</span>`);
+  else if (orgSpend.openaiErr) parts.push(`<span title="${esc(orgSpend.openaiErr)}" style="color:var(--red);opacity:.8">gpt spend ⚠</span>`);
+  else parts.push(acctBal.openai != null
+    ? `<span title="${balHint("openai")}">gpt <b>${fmtUsd(acctBal.openai)}</b> left</span>`
+    : `<span title="For LIVE spend, add an OpenAI ADMIN key in Connections. Or set a balance and the studio counts down from real usage." style="opacity:.7">gpt — set balance</span>`);
+  if (sessionSpend > 0) parts.push(`<span title="Claude + GPT cost this session — panel chats, board asks, prompt-writing and GPT-image renders (renders are close estimates). Exact: $${sessionSpend.toFixed(4)}">session ~<b>${fmtSpend(sessionSpend)}</b></span>`);
   if (veniceUsd != null) parts.push(`<span title="Venice balance remaining — live from the Venice API">venice <b>$${veniceUsd.toFixed(2)}</b> left</span>`);
   // ArtCraft credits remaining (only meaningful once its server-side wall clears).
   if (artcraftState === "connected" && artcraftCredits != null) parts.push(`<span title="ArtCraft credits remaining">artcraft <b>${fmtCredits(artcraftCredits)}</b> left</span>`);
@@ -218,7 +244,7 @@ async function showApp() {
   toggleChatPanel(localStorage.getItem("plx-chat-open") !== "0");
   await setThread(chatThread);
   renderSpace();
-  loadCredits(); loadStatus(); loadBalances();
+  loadCredits(); loadStatus(); loadBalances(); loadSpend();
 }
 
 /* ---- Dual Mind panel (v53): one collapsible chat thread on the left; Space is the stage ---- */
@@ -319,8 +345,12 @@ function renderProjects() {
   for (const p of projects) {
     const el = document.createElement("div"); el.className = "pitem" + (p.id === chatThread ? " on" : "");
     el.innerHTML = `<span class="nm">${esc(p.name)}</span><span class="badge t">${p.type}</span>` + (p.author ? `<span class="badge author">${esc(p.author)}</span>` : "");
-    el.title = p.type === "chat" ? "open this thread in the Dual Mind panel" : "legacy " + p.type + " project — generation lives on the board now";
-    el.onclick = async () => { if (p.type !== "chat") { toast("legacy " + p.type + " project — generation lives on the board now"); return; } hide("projModal"); toggleChatPanel(true); await setThread(p.id); };
+    el.title = p.type === "chat" ? "open this project — its chat thread in the panel AND its board on the stage" : "open this project's board — its renders file into its gallery folder and use its instructions";
+    el.onclick = async () => {
+      hide("projModal");
+      if (p.type === "chat") { toggleChatPanel(true); await setThread(p.id); }
+      await cvOpenProjectBoard(p);
+    };
     const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "rename / edit";
     ed.onclick = (e) => { e.stopPropagation(); hide("projModal"); openEdit(p); };
     const x = document.createElement("button"); x.className = "x"; x.textContent = "🗑"; x.title = "delete project";
@@ -477,6 +507,8 @@ async function openConnections() {
     const d = await api("/api/connections"); const pr = d.providers;
     $("anthropicStatus").textContent = pr.anthropic.connected ? "connected (your key)" : "using server key"; $("anthropicStatus").className = "status" + (pr.anthropic.connected ? " ok" : "");
     $("openaiStatus").textContent = pr.openai.connected ? "connected (your key)" : "using server key"; $("openaiStatus").className = "status" + (pr.openai.connected ? " ok" : "");
+    const aa = $("anthropicAdminStatus"); if (aa) { aa.textContent = pr.anthropic.admin ? "admin key saved — live month spend in the top bar" : "no admin key — spend can't be read"; aa.className = "status" + (pr.anthropic.admin ? " ok" : ""); }
+    const oa = $("openaiAdminStatus"); if (oa) { oa.textContent = pr.openai.admin ? "admin key saved — live month spend in the top bar" : "no admin key — spend can't be read"; oa.className = "status" + (pr.openai.admin ? " ok" : ""); }
     const v = pr.venice; $("veniceStatus").textContent = v.connected ? "connected" + (v.balance && v.balance.usd != null ? ` · $${v.balance.usd.toFixed(2)}` : "") : "not connected"; $("veniceStatus").className = "status" + (v.connected ? " ok" : "");
     const a = pr.artcraft; $("artcraftStatus").textContent = a.connected ? (a.baseSet ? "connected" : "key stored · add base URL to enable") : "not connected"; $("artcraftStatus").className = "status" + (a.connected && a.baseSet ? " ok" : "");
   } catch {}
@@ -484,7 +516,7 @@ async function openConnections() {
 async function saveProviderKey(provider, inputId) {
   const key = $(inputId).value.trim(); if (!key) return;
   const d = await api("/api/connections", { provider, key });
-  if (d.ok) { $(inputId).value = ""; toast(provider + " key saved"); openConnections(); if (provider === "anthropic" || provider === "openai") loadModels(); loadStatus(); } else toast(d.error || "save failed");
+  if (d.ok) { $(inputId).value = ""; toast(provider.replace("_admin", " admin") + " key saved"); openConnections(); if (provider === "anthropic" || provider === "openai") loadModels(); if (/_admin$/.test(provider)) loadSpend(); loadStatus(); } else toast(d.error || "save failed");
 }
 
 /* provider credits (Venice reports a live balance; shown in the top meters) */
@@ -1347,7 +1379,9 @@ async function cvSourceFor(n) {
 
 /* ---- shared SSE call ---- */
 async function cvStream(provider, model, messages, onDelta) {
-  const res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify({ provider, model, messages }) });
+  const payload = { provider, model, messages };
+  const pid = cvBoardProjectId(); if (pid) payload.projectId = pid;
+  const res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) });
   const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", text = "", err = null;
   while (true) {
     const { done, value } = await reader.read(); if (done) break;
@@ -1454,7 +1488,7 @@ async function cvGenerate(nid) {
       // the serverless window (the old single ×N request was what hit platform 502s).
       const count = Math.max(1, Math.min(4, Number(n.count || "1") || 1));
       if (stat) stat.textContent = count > 1 ? `rendering ${count} in parallel…` : "rendering…";
-      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, options: { provider: n.iprov || "venice", model: n.rmodel || undefined, format: "webp", aspect_ratio: n.aspect || "1:1", variants: "1" } };
+      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: n.iprov || "venice", model: n.rmodel || undefined, format: "webp", aspect_ratio: n.aspect || "1:1", variants: "1" } };
       if ((n.iprov || "venice") === "openai") reqBase.options.quality = n.iq || "medium";
       const results = await Promise.allSettled(Array.from({ length: count }, () => api("/api/image", { ...reqBase, options: { ...reqBase.options } })));
       let ok = 0, lastErr = null, bal = null;
@@ -1471,6 +1505,12 @@ async function cvGenerate(nid) {
         }
       });
       if (bal != null) cvCost(bal);
+      // GPT-image renders have no live balance header — count a close per-quality
+      // estimate into the meters so Space usage is never invisible money.
+      if (ok && (n.iprov || "venice") === "openai") {
+        const OPENAI_IMG_EST = { low: 0.011, medium: 0.042, high: 0.167 };
+        addFlatSpend("openai", (OPENAI_IMG_EST[n.iq || "medium"] || 0.042) * ok);
+      }
       cvSave(); cvDrawEdges(); loadRefWallIfOpen();
       if (!ok) throw lastErr || new Error("no image returned");
       if (stat) {
@@ -1480,7 +1520,7 @@ async function cvGenerate(nid) {
     } else {
       // aspect always rides along: video.js drops it for first-frame i2v (Venice rejects it
       // there) but reference-to-video and text-to-video REQUIRE it (Venice 400s without it).
-      const req = { brief: text || "animate the source", prewritten: prompt, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p", aspect_ratio: n.aspect || "16:9" } };
+      const req = { brief: text || "animate the source", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: n.vprov || "venice", model: n.rmodel || undefined, duration: n.dur || "5s", resolution: n.res || "720p", aspect_ratio: n.aspect || "16:9" } };
       // Source image (from the parent chain) + dropped image refs all ride along;
       // the backend routes to Seedance reference→video when more than one is present.
       const imgAtts = [];
@@ -1596,7 +1636,25 @@ function cvNormalize(doc) {
 function cvBoardsUI() {
   const sel = $("cvBoardSel"); if (!sel) return;
   sel.innerHTML = "";
-  for (const b of cvBoards) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.name; if (b.id === cvBoardId) o.selected = true; sel.appendChild(o); }
+  for (const b of cvBoards) { const o = document.createElement("option"); o.value = b.id; o.textContent = (b.projectId && projects.some((p) => p.id === b.projectId)) ? "📁 " + b.name : b.name; if (b.id === cvBoardId) o.selected = true; sel.appendChild(o); }
+}
+// The project a board belongs to: its generations file into that project's gallery
+// folder and its prompt-writing picks up the project's instructions.
+function cvBoardProjectId() {
+  const b = cvBoards.find((x) => x.id === cvBoardId);
+  return b && b.projectId && projects.some((p) => p.id === b.projectId) ? b.projectId : null;
+}
+// Open (or create) the board tied to a project — the "seamless" jump from the popover.
+async function cvOpenProjectBoard(p) {
+  await cvWhenReady();
+  const existing = cvBoards.find((b) => b.projectId === p.id);
+  if (existing) { if (existing.id !== cvBoardId) await cvOpenBoard(existing.id); return; }
+  try {
+    const d = await api("/api/boards", { name: p.name, projectId: p.id, board: { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1, updatedAt: Date.now() } });
+    cvBoards = d.boards || cvBoards;
+    await cvOpenBoard(d.id);
+    toast("board “" + p.name + "” created — it files renders into this project");
+  } catch { toast("couldn't open the project board"); }
 }
 async function cvOpenBoard(id) {
   cvFlush();   // don't lose edits to the board we're leaving
@@ -1679,6 +1737,8 @@ async function setAcctBalance(provider, inputId) {
 }
 $("anthropicBalSave").onclick = () => setAcctBalance("anthropic", "anthropicBal");
 $("openaiBalSave").onclick = () => setAcctBalance("openai", "openaiBal");
+$("anthropicAdminSave").onclick = () => saveProviderKey("anthropic_admin", "anthropicAdminKey");
+$("openaiAdminSave").onclick = () => saveProviderKey("openai_admin", "openaiAdminKey");
 $("veniceSave").onclick = () => saveProviderKey("venice", "veniceKey");
 $("artcraftSave").onclick = async () => {
   const key = $("artcraftKey").value.trim(), base = $("artcraftBase").value.trim(); if (!key && !base) return;

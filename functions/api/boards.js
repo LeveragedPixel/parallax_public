@@ -85,6 +85,7 @@ export async function onRequestPost(context) {
     idx.push(entry);
   }
   if (body.name) entry.name = String(body.name).slice(0, 60);
+  if ("projectId" in body) entry.projectId = body.projectId ? String(body.projectId).slice(0, 60) : null; // link a board to a project
   entry.updatedAt = Date.now();
   if (body.board) {
     const doc = boundBoard(body.board);

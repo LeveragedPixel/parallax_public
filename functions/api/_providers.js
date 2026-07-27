@@ -16,6 +16,9 @@ export async function getKeys(env, user) {
     venice: stored.venice || env.VENICE_API_KEY || "",
     artcraft: stored.artcraft || env.ARTCRAFT_API_KEY || "",
     artcraftBase: (stored.artcraft_base || env.ARTCRAFT_BASE_URL || "").replace(/\/+$/, ""),
+    // Admin keys (optional): the ONLY key type Anthropic/OpenAI let read org spend.
+    anthropicAdmin: stored.anthropic_admin || env.ANTHROPIC_ADMIN_KEY || "",
+    openaiAdmin: stored.openai_admin || env.OPENAI_ADMIN_KEY || "",
   };
 }
 export async function saveKey(env, user, field, value) {
