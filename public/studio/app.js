@@ -2,10 +2,10 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 56; // v56: Gallery button joins Dual Mind + Projects in the workspace cluster
+const BUILD = 57; // v57: themes restored (20 palettes), board→chat "send linked images", Space renamed Neural Board
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
-const THEMES = ["ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
+const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
 const MODEL_KEYS = { claude: "plx-model-claude", gpt: "plx-model-gpt" };
 
 let token = localStorage.getItem(TOKEN_KEY) || "";
@@ -112,7 +112,7 @@ function clearEmpty(el) { const e = el.querySelector(".empty"); if (e) e.remove(
 function initTheme() {
   const sel = $("themeSel"); sel.innerHTML = "";
   for (const t of THEMES) { const o = document.createElement("option"); o.value = t; o.textContent = t.toUpperCase(); sel.appendChild(o); }
-  const saved = localStorage.getItem("plx-theme") || "ember"; sel.value = saved; document.body.dataset.theme = saved;
+  const saved = localStorage.getItem("plx-theme") || "midnight"; sel.value = saved; document.body.dataset.theme = saved;
   sel.onchange = () => { document.body.dataset.theme = sel.value; localStorage.setItem("plx-theme", sel.value); };
 }
 // Estimated $ per 1M tokens by model family. Anthropic/OpenAI don't expose a remaining
@@ -1033,6 +1033,7 @@ function cvAddNodeEl(n) {
   el.style.width = (n.w || { image: 280, video: 300, prompt: 320, text: 340 }[n.kind] || 300) + "px";
   if (n.kind === "image") {
     el.innerHTML = `<div class="cvimgwrap">${n.dataUrl ? `<img src="${n.dataUrl}" draggable="false">` : `<div class="cvmissing">loading…</div>`}</div>
+      <button class="cvchat corner" title="send this image — and anything linked to it — to the Dual Mind chat">💬</button>
       <button class="cvx" title="remove from board (the image stays in your gallery)">✕</button>
       <div class="cvport" title="drag off to grow from this image">＋</div>`;
     cvWireMedia(n, el);
@@ -1042,7 +1043,7 @@ function cvAddNodeEl(n) {
       <div class="cvport" title="drag off to grow from this clip">＋</div>`;
     cvWireMedia(n, el);
   } else if (n.kind === "text") {
-    el.innerHTML = `<div class="cvphead">TEXT<span class="sp"></span><select class="cvagent" title="which mind answers"></select><button class="cvx" title="remove">✕</button></div>
+    el.innerHTML = `<div class="cvphead">TEXT<span class="sp"></span><button class="cvchat" title="send linked images + notes to the Dual Mind chat">💬</button><select class="cvagent" title="which mind answers"></select><button class="cvx" title="remove">✕</button></div>
       <textarea class="cvtext" placeholder="ask anything — a connected image is seen, connected text is remembered…">${esc(n.text || "")}</textarea>
       <div class="cvrow"><button class="btn-solid cvask">Ask</button><span class="cvstat"></span></div>
       <div class="cvreply ${n.reply ? "" : "hide"}"><div class="who"><span class="agname">${esc(n.replyBy || "REPLY")}</span><button class="copybtn">COPY</button></div><div class="bub">${esc(n.reply || "")}</div></div>
@@ -1102,6 +1103,7 @@ function cvAddNodeEl(n) {
     if (out === "video") cvWireRefZone(n, el);
   }
   el.querySelector(".cvx").onclick = () => cvRemove(n.id);
+  const cvc = el.querySelector(".cvchat"); if (cvc) cvc.onclick = (e) => { e.stopPropagation(); cvSendToChat(n.id); };
   const rz = document.createElement("div"); rz.className = "cvrz"; rz.title = "drag to resize";
   el.appendChild(rz);
   cvSkillsRow(n, el);
@@ -1198,6 +1200,36 @@ function cvWireRefZone(n, el) {
     const got = await cvAddRefFiles(n, (e.dataTransfer && e.dataTransfer.files) || []);
     if (!got) toast("drop an image, a .wav, or an .mp3 here");
   });
+}
+/* ---- board → Dual Mind chat: brainstorm on the Neural Board, then prompt off a
+   linked cluster. Walks the (undirected) connected component from a node, pulls its
+   images in as chat attachments and its text notes in as the prompt seed. ---- */
+function cvComponent(startId) {
+  const seen = new Set(), q = [startId], out = [];
+  while (q.length) {
+    const id = q.shift(); if (seen.has(id)) continue; seen.add(id);
+    const nn = cvNode(id); if (!nn) continue; out.push(nn);
+    for (const e of cv.edges) { if (e.from === id && !seen.has(e.to)) q.push(e.to); if (e.to === id && !seen.has(e.from)) q.push(e.from); }
+  }
+  return out;
+}
+async function cvSendToChat(nid) {
+  const n = cvNode(nid); if (!n) return;
+  const comp = cvComponent(nid);
+  const imgs = comp.filter((x) => x.kind === "image" && x.dataUrl);
+  const notes = comp.filter((x) => x.kind === "text" && (x.text || "").trim()).map((x) => x.text.trim());
+  if (!imgs.length && !notes.length) { toast("nothing linked to send — connect an image or add a note"); return; }
+  toggleChatPanel(true);
+  let k = 0;
+  for (const im of imgs) { const att = await shrinkAtt(dataUrlToAtt(im.dataUrl)); if (att) { chatAtts.push(att); k++; } }
+  renderChatAtts();
+  const ta = $("chatText");
+  if (ta) {
+    const seed = notes.length ? notes.join("\n\n") : (k > 1 ? `Using these ${k} linked images, ` : "Using this image, ");
+    if (!ta.value.trim()) ta.value = seed;
+    ta.focus();
+  }
+  toast(`${k} image${k !== 1 ? "s" : ""}${notes.length ? ` + ${notes.length} note${notes.length > 1 ? "s" : ""}` : ""} → Dual Mind chat`);
 }
 function cvWireMedia(n, el) {
   const img = el.querySelector("img");

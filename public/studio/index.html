@@ -89,7 +89,7 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .btn-wide{margin:8px 10px;width:calc(100% - 20px);background:transparent;color:var(--dim);border:1px dashed var(--line);
   border-radius:8px;padding:8px;font-size:12px;font-weight:500}
 .btn-wide:hover{border-color:var(--pri);color:var(--pri);background:var(--pri-dim)}
-.btn-solid{background:linear-gradient(180deg,var(--pri-hi),var(--pri));color:#fff;border-radius:8px;padding:8px 16px;font-weight:600;
+.btn-solid{background:linear-gradient(180deg,var(--pri-hi),var(--pri));color:var(--btn-ink,#fff);border-radius:8px;padding:8px 16px;font-weight:600;
   box-shadow:var(--sh-1),inset 0 1px 0 rgba(255,255,255,.18)}
 .btn-solid:hover{filter:brightness(1.07)}
 .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-weight:500;font-size:12px}
@@ -195,7 +195,7 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .vbadge{position:absolute;bottom:3px;left:3px;background:rgba(0,0,0,.66);color:#fff;font-size:9px;border-radius:3px;padding:1px 4px;z-index:2;pointer-events:none}
 .galtabs{display:flex;gap:4px;padding:8px 8px 0}
 .galtab{flex:1;background:transparent;color:var(--dim);border:1px solid var(--line);border-radius:7px;padding:5px;font-size:10.5px;font-weight:600}
-.galtab.on{color:#fff;background:var(--pri);border-color:var(--pri)}
+.galtab.on{color:var(--btn-ink,#fff);background:var(--pri);border-color:var(--pri)}
 .galfolder{grid-column:1/3;display:flex;align-items:center;gap:6px;margin:8px 0 2px;font-size:10.5px;color:var(--pri);cursor:pointer;user-select:none;font-weight:600}
 .galfolder .cnt{color:var(--faint)}
 .galfolder.cust{color:var(--sec)}
@@ -272,8 +272,42 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .hide{display:none!important}
 
-/* theme selector retired in clean-studio skin (kept in DOM for app.js) */
-#themeSel,.theme-chip{display:none!important}
+/* ===== THEMES (v57): 20 palettes + the default "midnight". Each theme sets only the
+   core vars; the rest are derived with color-mix so every palette stays cohesive.
+   --claude / --gpt stay fixed so the two chat lanes keep their identity. ===== */
+.theme-chip{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+#themeSel{font-size:11px;padding:3px 6px;max-width:120px}
+body[data-theme]{
+  --raised:color-mix(in srgb, var(--panel2), #ffffff 8%);
+  --faint:color-mix(in srgb, var(--dim), var(--void) 42%);
+  --line2:color-mix(in srgb, var(--line), var(--dim) 50%);
+  --pri-hi:color-mix(in srgb, var(--pri), #ffffff 26%);
+  --pri-dim:color-mix(in srgb, var(--pri) 14%, transparent);
+  --glow-pri:color-mix(in srgb, var(--pri) 30%, transparent);
+  --sec-dim:color-mix(in srgb, var(--sec) 16%, transparent);
+  --btn-ink:#ffffff;   /* text on solid primary buttons; overridden for light palettes */
+}
+body[data-theme="midnight"]{--void:#0b0d12;--panel:#12151c;--panel2:#181c25;--line:#232937;--pri:#6c8cff;--sec:#45c495;--txt:#e8eaf0;--dim:#8d94a6;--red:#e06074}
+body[data-theme="ember"]{--void:#07080B;--panel:#0C0E13;--panel2:#10131A;--line:#1E2530;--pri:#FF6A00;--sec:#00E08A;--txt:#D8DCE2;--dim:#737C88;--red:#FF2B2B}
+body[data-theme="cobalt"]{--void:#05070D;--panel:#090D16;--panel2:#0C111D;--line:#1A2336;--pri:#3D7BFF;--sec:#00E5FF;--txt:#DCE2EC;--dim:#717B90;--red:#FF3D5A}
+body[data-theme="crimson"]{--void:#0A0708;--panel:#120B0D;--panel2:#170E11;--line:#2A1A1E;--pri:#FF2438;--sec:#C7D3DC;--txt:#E6E0DC;--dim:#887773;--red:#FF7A00}
+body[data-theme="unit01"]{--void:#08060D;--panel:#0E0A16;--panel2:#130E1E;--line:#241B36;--pri:#9D5CFF;--sec:#9DFF2E;--txt:#E0DCEA;--dim:#7F7694;--red:#FF2BB0}
+body[data-theme="bebop"]{--void:#0B0906;--panel:#120F0A;--panel2:#17130C;--line:#2A2316;--pri:#FFB23E;--sec:#3EC9A7;--txt:#E8E2D4;--dim:#837B6C;--red:#FF4B3E;--btn-ink:#1a1206}
+body[data-theme="ronin"]{--void:#0A0908;--panel:#11100D;--panel2:#161410;--line:#2A2820;--pri:#D4A437;--sec:#E8E0CC;--txt:#E6E0D2;--dim:#827C6F;--red:#C23B2A;--btn-ink:#171205}
+body[data-theme="hivis"]{--void:#0A0A08;--panel:#111110;--panel2:#161614;--line:#2A2A24;--pri:#FFE600;--sec:#F2F2EC;--txt:#EDEDE6;--dim:#80807A;--red:#FF3D00;--btn-ink:#161600}
+body[data-theme="toxin"]{--void:#060A06;--panel:#0B110B;--panel2:#0F160F;--line:#1C2A1C;--pri:#7CFF2E;--sec:#2EFFB8;--txt:#DCEAD8;--dim:#6E8270;--red:#FF2B5A;--btn-ink:#0a1604}
+body[data-theme="ice"]{--void:#07090C;--panel:#0C0F14;--panel2:#10141B;--line:#1E2630;--pri:#E8F4FF;--sec:#6ED4FF;--txt:#E4EAF0;--dim:#727D89;--red:#FF4B6E;--btn-ink:#0a1017}
+body[data-theme="ghost"]{--void:#08080A;--panel:#0E0E11;--panel2:#121216;--line:#222228;--pri:#E8E8EC;--sec:#8A8A96;--txt:#DCDCE2;--dim:#7B7B86;--red:#FF3B30;--btn-ink:#111114}
+body[data-theme="akira"]{--void:#0B0606;--panel:#140A0A;--panel2:#1A0D0D;--line:#301616;--pri:#E8231A;--sec:#F2EDE4;--txt:#EDE6DC;--dim:#8C7672;--red:#FFB000}
+body[data-theme="sakura"]{--void:#0C080B;--panel:#140D12;--panel2:#1A1017;--line:#2E1C28;--pri:#FF7EB6;--sec:#7ED99B;--txt:#EADFE6;--dim:#8B7682;--red:#FF4B4B}
+body[data-theme="oni"]{--void:#0A0808;--panel:#121010;--panel2:#171414;--line:#2A2424;--pri:#FF4B1F;--sec:#EDE3CF;--txt:#EAE2D4;--dim:#867B6E;--red:#FFD23E}
+body[data-theme="mecha"]{--void:#080A0D;--panel:#0E1116;--panel2:#12161D;--line:#222A36;--pri:#FFC93D;--sec:#7FA8C9;--txt:#DEE4EA;--dim:#737D8E;--red:#FF3D3D;--btn-ink:#161200}
+body[data-theme="vapor"]{--void:#0A0710;--panel:#120C1A;--panel2:#171021;--line:#2A1E3A;--pri:#FF3DB8;--sec:#3DE8FF;--txt:#E6DEEC;--dim:#847697;--red:#FFE03D}
+body[data-theme="tatami"]{--void:#0A0B07;--panel:#10120B;--panel2:#15170E;--line:#262A1C;--pri:#A8C24A;--sec:#E0C878;--txt:#E4E6D6;--dim:#7E826C;--red:#E25C3A;--btn-ink:#12160a}
+body[data-theme="magma"]{--void:#0B0706;--panel:#140C09;--panel2:#1A0F0B;--line:#301E16;--pri:#FF7A1F;--sec:#FFB893;--txt:#EDE0D8;--dim:#8C776A;--red:#FF2B2B}
+body[data-theme="ocean"]{--void:#060A0E;--panel:#0A1118;--panel2:#0D151E;--line:#1A2A38;--pri:#2E9EFF;--sec:#8FF2E0;--txt:#DAE6EE;--dim:#6A7E8E;--red:#FF5C7A}
+body[data-theme="violet"]{--void:#0A0810;--panel:#100D18;--panel2:#15111F;--line:#251F38;--pri:#C9A8FF;--sec:#F2EFFA;--txt:#E8E4F2;--dim:#807890;--red:#FF6E8A;--btn-ink:#120e1c}
+body[data-theme="terminal"]{--void:#050805;--panel:#0A0F0A;--panel2:#0D140D;--line:#1C2A1C;--pri:#33FF66;--sec:#A8FFC2;--txt:#D8EADC;--dim:#62836A;--red:#FF4B4B;--btn-ink:#04140a}
 
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -315,6 +349,13 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
   cursor:crosshair;box-shadow:var(--sh-1);opacity:0;transition:opacity .15s,transform .15s;z-index:2}
 .cvnode:hover .cvport{opacity:1}
 .cvport:hover{transform:translateY(-50%) scale(1.15)}
+/* v57: send a node's linked cluster to the Dual Mind chat */
+.cvchat{border:1px solid var(--line2);background:var(--panel2);color:var(--dim);border-radius:6px;
+  padding:1px 6px;font-size:12px;line-height:1.5;cursor:pointer;transition:.15s}
+.cvchat:hover{border-color:var(--pri);color:var(--pri-hi);background:var(--pri-dim)}
+.cvnode .cvchat.corner{position:absolute;top:6px;left:6px;z-index:5;background:rgba(0,0,0,.5);opacity:0}
+.cvnode:hover .cvchat.corner{opacity:1}
+.cvphead .cvchat{padding:0 5px}
 .cvnode.prompt{padding:8px;cursor:grab}
 .cvnode.prompt:active{cursor:grabbing}
 .cvphead{display:flex;align-items:center;gap:6px;font-size:9.5px;letter-spacing:.12em;color:var(--faint);font-weight:700;margin-bottom:6px}
@@ -474,7 +515,7 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
         <select id="chatThreadSel" title="which conversation this panel holds — Raw dual chat, or any chat project"></select>
         <button class="lanetog on a" id="togClaude" title="toggle Claude's lane">Claude</button>
         <button class="lanetog on c" id="togGpt" title="toggle ChatGPT's lane">GPT</button>
-        <button class="x" id="chatCollapse" title="collapse — give the Space the whole window">⟨</button>
+        <button class="x" id="chatCollapse" title="collapse — give the Neural Board the whole window">⟨</button>
       </div>
       <div class="cp-models">
         <div class="m"><span class="a">Claude</span><select id="mClaude"></select><span class="st" id="mClaudeState"></span></div>
@@ -499,7 +540,7 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
     <main class="deck">
       <div class="stage" id="stage">
         <div class="genstage" id="spaceStage">
-          <div class="col-h"><span class="dot a"></span><b>Space</b>
+          <div class="col-h"><span class="dot a"></span><b>Neural Board</b>
             <select id="cvBoardSel" class="tbtn" style="padding:3px 8px;font-size:11px;max-width:170px" title="your boards — saved to your account, they follow you to any computer"></select>
             <button class="tbtn" id="cvBoardNew" style="padding:4px 9px;font-size:11px" title="new board">＋</button>
             <button class="tbtn" id="cvBoardRen" style="padding:4px 9px;font-size:11px" title="rename this board">✎</button>
@@ -581,6 +622,6 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=56"></script>
+<script src="app.js?v=57"></script>
 </body>
 </html>
