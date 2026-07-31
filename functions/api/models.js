@@ -28,10 +28,12 @@ export async function onRequestGet(context) {
     if (provider === "claude") return json({ ok: true, provider, models: await listClaude(keys.anthropic) });
     if (provider === "gpt") return json({ ok: true, provider, type, models: await listGPT(keys.openai, type === "image" && hasTypeParam(request)) });
     if (provider === "venice") {
+      // v60: Venice serves VIDEO models only — image generation is OpenAI-only.
+      if (type === "image") return json({ ok: true, provider, type, models: [], note: "image generation runs on OpenAI only" });
       if (!keys.venice) return json({ ok: true, provider, models: [], note: "Venice not connected" });
       return json({ ok: true, provider, type, models: await veniceModels(keys.venice, type) });
     }
-    if (provider === "artcraft") return json({ ok: true, provider, type, models: artcraftModels(type) });
+    if (provider === "artcraft") return json({ ok: true, provider, type, models: type === "image" ? [] : artcraftModels(type), note: type === "image" ? "image generation runs on OpenAI only" : undefined });
     return json({ error: "unknown provider" }, 400);
   } catch (err) {
     return json({ error: err.message || "model detection failed" });

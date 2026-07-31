@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 59; // v59: real threads (rail, rename, auto-title) separated from projects; projects = context containers; live credits
+const BUILD = 60; // v60: image generation is OpenAI-only — Venice/ArtCraft are video-only (they were eating Seedance credits)
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1222,16 +1222,18 @@ function cvAddNodeEl(n) {
   } else {
     const out = n.out || "image";
     const vprov = n.vprov || "venice";
-    const iprov = n.iprov || "venice";
-    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span>` : `<span class="cvapi ${iprov === "openai" ? "oa" : "vn"}" title="the API this node renders on">${iprov.toUpperCase()} API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
+    const iprov = "openai";   // v60: images are OpenAI-only (Venice/ArtCraft = video credits)
+    if (n.iprov && n.iprov !== "openai") { n.iprov = "openai"; cvSave(); }   // heal boards saved before v60
+    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span>` : `<span class="cvapi oa" title="image generation runs on OpenAI only">OPENAI API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
       <textarea class="cvtext" placeholder="${out === "video" ? "describe the motion / scene…  e.g. 'slow push-in, she turns and smiles, rain starts'" : "recreate / edit / change…  e.g. 'make it golden hour' or 'same character, side profile'"}">${esc(n.text || "")}</textarea>
       <div class="cvctl">
-        ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<select class="cviprov" title="which image API renders this — Venice or OpenAI (GPT Image, uses your OpenAI key)"><option value="venice" ${iprov === "venice" ? "selected" : ""}>Venice API</option><option value="openai" ${iprov === "openai" ? "selected" : ""}>OpenAI API</option></select>`}
-        <select class="cvrmodel" title="${out === "video" ? "video model" : "image model"}"><option value="">${out === "video" ? "video model: default" : (iprov === "openai" ? "gpt-image-2 (default)" : "image model: default")}</option></select>
+        ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<span class="cvfixed" title="image generation runs on OpenAI GPT Image only — Venice and ArtCraft credits are reserved for video">OpenAI · GPT Image</span>`}
+        <select class="cvrmodel" title="${out === "video" ? "video model" : "image model"}"><option value="">${out === "video" ? "video model: default" : "gpt-image-2 (default)"}</option></select>
       </div>
       <div class="cvrow">${out === "image"
         ? `<select class="cvcount" title="how many variations">${["1", "2", "3", "4"].map((c) => `<option value="${c}" ${c === (n.count || "1") ? "selected" : ""}>×${c}</option>`).join("")}</select>
-           <select class="cvaspect" title="aspect ratio">${["1:1", "16:9", "9:16", "4:3", "3:2"].map((a) => `<option ${a === (n.aspect || "1:1") ? "selected" : ""}>${a}</option>`).join("")}</select>${iprov === "openai" ? `<select class="cvquality" title="quality — HIGH can take minutes and will time out; medium is the sweet spot">${["low", "medium", "high"].map((q) => `<option ${q === (n.iq || "medium") ? "selected" : ""}>${q}</option>`).join("")}</select>` : ""}`
+           <select class="cvaspect" title="aspect ratio">${["1:1", "16:9", "9:16", "4:3", "3:2"].map((a) => `<option ${a === (n.aspect || "1:1") ? "selected" : ""}>${a}</option>`).join("")}</select>
+           <select class="cvquality" title="quality — HIGH can take minutes and will time out; medium is the sweet spot">${["low", "medium", "high"].map((q) => `<option ${q === (n.iq || "medium") ? "selected" : ""}>${q}</option>`).join("")}</select>`
         : `<select class="cvdur" title="duration">${["5s", "10s", "15s"].map((d) => `<option ${d === (n.dur || "5s") ? "selected" : ""}>${d}</option>`).join("")}</select>
            <select class="cvres" title="resolution">${["1080p", "720p", "480p"].map((r) => `<option ${r === (n.res || "720p") ? "selected" : ""}>${r}</option>`).join("")}</select>
            <select class="cvaspect" title="aspect ratio (ignored when a source image/clip sets it)">${["16:9", "9:16", "1:1"].map((a) => `<option ${a === (n.aspect || "16:9") ? "selected" : ""}>${a}</option>`).join("")}</select>`}
@@ -1249,12 +1251,10 @@ function cvAddNodeEl(n) {
       pv.value = vprov;
       pv.onchange = () => { n.vprov = pv.value; n.rmodel = null; cvSave(); cvRebuildNode(n); };
     }
-    const ip = el.querySelector(".cviprov");
-    if (ip) ip.onchange = () => { n.iprov = ip.value; n.rmodel = null; cvSave(); cvRebuildNode(n); };
     const qs = el.querySelector(".cvquality");
     if (qs) qs.onchange = () => { n.iq = qs.value; cvSave(); };
     const rm = el.querySelector(".cvrmodel");
-    cvRenderModels(out === "video" ? vprov : (iprov === "openai" ? "gpt" : "venice"), out).then((models) => {
+    cvRenderModels(out === "video" ? vprov : "gpt", out).then((models) => {
       for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.label || m.id; rm.appendChild(o); }
       if (n.rmodel) rm.value = n.rmodel;
     });
@@ -1684,8 +1684,8 @@ async function cvGenerate(nid) {
       // the serverless window (the old single ×N request was what hit platform 502s).
       const count = Math.max(1, Math.min(4, Number(n.count || "1") || 1));
       if (stat) stat.textContent = count > 1 ? `rendering ${count} in parallel…` : "rendering…";
-      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: n.iprov || "venice", model: n.rmodel || undefined, format: "webp", aspect_ratio: n.aspect || "1:1", variants: "1" } };
-      if ((n.iprov || "venice") === "openai") reqBase.options.quality = n.iq || "medium";
+      // v60: images always render on OpenAI — Venice/ArtCraft credits are video-only.
+      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: "openai", model: n.rmodel || undefined, aspect_ratio: n.aspect || "1:1", variants: "1", quality: n.iq || "medium" } };
       const results = await Promise.allSettled(Array.from({ length: count }, () => api("/api/image", { ...reqBase, options: { ...reqBase.options } })));
       let ok = 0, lastErr = null, bal = null;
       results.forEach((res, i) => {
@@ -1703,7 +1703,7 @@ async function cvGenerate(nid) {
       if (bal != null) cvCost(bal);
       // GPT-image renders have no live balance header — count a close per-quality
       // estimate into the meters so Space usage is never invisible money.
-      if (ok && (n.iprov || "venice") === "openai") {
+      if (ok) {
         const OPENAI_IMG_EST = { low: 0.011, medium: 0.042, high: 0.167 };
         addFlatSpend("openai", (OPENAI_IMG_EST[n.iq || "medium"] || 0.042) * ok);
       }

@@ -9,7 +9,7 @@ import { loadProject, composeSystem } from "./_projects.js";
 import { CATALOG } from "./_catalog.js";
 import { mergedCatalog } from "./_skills.js";
 import { claudeComplete } from "./_llm.js";
-import { getKeys, veniceImage, openaiImage, artcraftGenerate } from "./_providers.js";
+import { getKeys, openaiImage } from "./_providers.js";   // v60: image = OpenAI only
 import { addMedia } from "./_gallery.js";
 
 function json(obj, status = 200) {
@@ -37,7 +37,11 @@ export async function onRequestPost(context) {
   const user = userFromToken(token);
   const project = projectId ? await loadProject(env, user, projectId) : null;
   const settings = (project && project.settings) || {};
-  const provider = opts.provider || settings.provider || "venice";
+  // v60: IMAGE GENERATION IS OPENAI-ONLY. Venice/ArtCraft credits are reserved for
+  // video (Seedance); routing an image at them silently burned those credits. The
+  // server refuses instead of trusting whatever provider the client asked for.
+  const askedProvider = opts.provider || settings.provider || "openai";
+  const provider = "openai";
   const keys = await getKeys(env, user);
 
   // Step 1 — prompt.
@@ -60,8 +64,11 @@ export async function onRequestPost(context) {
   // Prompt-only mode: return the written prompt without generating (for copy / preview).
   if (body.promptOnly) return json({ ok: true, stage: "prompt", promptUsed });
 
-  // Step 2 — generate.
-  if (provider === "openai") {
+  // Step 2 — generate (OpenAI only).
+  if (askedProvider !== "openai") {
+    return json({ error: `Image generation runs on OpenAI only — "${askedProvider}" is reserved for video, so nothing was charged there. This node now targets GPT Image; hit Generate again.`, promptUsed });
+  }
+  {
     if (!keys.openai) return json({ ok: true, stage: "prompt", promptUsed, note: "OpenAI not connected — add your key in Connections to render with GPT Image." });
     try {
       const out = await openaiImage(keys.openai, { model: opts.model || "gpt-image-2", prompt: promptUsed.slice(0, 30000), aspect: opts.aspect_ratio || "1:1", quality: opts.quality || "medium", n: opts.variants });
@@ -75,40 +82,5 @@ export async function onRequestPost(context) {
       return json({ ok: true, stage: "generated", provider: "openai", promptUsed, images: saved });
     } catch (err) { return json({ error: "OpenAI image failed: " + (err.message || "unknown"), promptUsed }); }
   }
-  if (provider === "artcraft") {
-    if (!keys.artcraft || !keys.artcraftBase) return json({ ok: true, stage: "prompt", promptUsed, note: "ArtCraft not fully connected — add its key + base URL in Connections." });
-    try {
-      // Map the UI's friendly values -> ArtCraft's exact enums (from api.json).
-      const AC_ASPECT = { "1:1": "one_by_one", "16:9": "sixteen_by_nine", "9:16": "nine_by_sixteen", "4:3": "four_by_three", "3:2": "three_by_two" };
-      const AC_COUNT = { "1": "one", "2": "two", "3": "three", "4": "four" };
-      const acBody = {
-        prompt: promptUsed.slice(0, 7500),
-        aspect_ratio: AC_ASPECT[opts.aspect_ratio || "1:1"] || "auto",
-        num_images: AC_COUNT[String(opts.variants || "1")] || "one",
-        resolution: opts.resolution || "two_k",
-        uuid_idempotency_token: crypto.randomUUID(),
-      };
-      const g = await artcraftGenerate(keys.artcraftBase, keys.artcraft, "image", opts.model || "multi_function/nano_banana_pro", acBody);
-      return json({ ok: true, stage: "queued", provider: "artcraft", job: g.job, promptUsed });
-    } catch (err) { return json({ error: "ArtCraft image failed: " + (err.message || "unknown"), promptUsed }); }
-  }
-
-  if (!keys.venice) return json({ ok: true, stage: "prompt", promptUsed, note: "Venice not connected — add your key in Connections to generate." });
-  try {
-    const fmt = opts.format || "webp";
-    const params = { model: opts.model || settings.model || "venice-sd35", prompt: promptUsed.slice(0, 7500), format: fmt, safe_mode: false };
-    if (opts.negative_prompt) params.negative_prompt = opts.negative_prompt;
-    if (opts.aspect_ratio) params.aspect_ratio = opts.aspect_ratio;
-    if (opts.resolution) params.resolution = opts.resolution;
-    if (opts.variants) params.variants = Number(opts.variants);
-    const out = await veniceImage(keys.venice, params);
-    const saved = [];
-    for (const b64 of out.images) {
-      const dataUrl = `data:image/${fmt};base64,${b64}`;
-      const entry = await addMedia(env, user, { type: "image", provider: "venice", prompt: promptUsed, dataUrl, projectId: project ? project.id : null, meta: { model: params.model } });
-      saved.push({ id: entry ? entry.id : null, dataUrl });
-    }
-    return json({ ok: true, stage: "generated", provider: "venice", promptUsed, images: saved, balanceUsd: out.balanceUsd });
-  } catch (err) { return json({ error: "image gen failed: " + (err.message || "unknown"), promptUsed }); }
   } catch (fatal) { return json({ error: "image failed: " + (fatal.message || "unknown") }); }
 }
