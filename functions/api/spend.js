@@ -7,7 +7,7 @@
 
 import { verifyToken } from "./_verify.js";
 import { tokenFrom, userFromToken } from "./_session.js";
-import { getKeys } from "./_providers.js";
+import { getKeys, openaiCredits, veniceBalance } from "./_providers.js";
 
 function json(o, s = 200) { return new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } }); }
 
@@ -71,8 +71,14 @@ export async function onRequestGet(context) {
   if (!(await verifyToken(token, env.SESSION_SECRET))) return json({ error: "unauthorized" }, 401);
   const keys = await getKeys(env, userFromToken(token));
 
-  const out = { ok: true, anthropic: { monthUsd: null }, openai: { monthUsd: null } };
+  const out = {
+    ok: true,
+    anthropic: { monthUsd: null, creditUsd: null, creditNote: "Anthropic exposes no remaining-credit endpoint to API or admin keys (still an open request) — set your balance in Connections and Parallax counts down from real usage." },
+    openai: { monthUsd: null, creditUsd: null },
+    venice: { usd: null, vcu: null, diem: null },
+  };
   await Promise.all([
+    // month-to-date spend (admin keys only)
     (async () => {
       if (!keys.anthropicAdmin) return;
       try { out.anthropic.monthUsd = await anthropicSpend(keys.anthropicAdmin); }
@@ -82,6 +88,19 @@ export async function onRequestGet(context) {
       if (!keys.openaiAdmin) return;
       try { out.openai.monthUsd = await openaiSpend(keys.openaiAdmin); }
       catch (e) { out.openai.error = String(e.message || e); }
+    })(),
+    // REMAINING credit: OpenAI's credit-grants surface (admin key first, then the plain key)
+    (async () => {
+      const k = keys.openaiAdmin || keys.openai;
+      if (!k) return;
+      try { const c = await openaiCredits(k); out.openai.creditUsd = c.available; out.openai.creditGranted = c.granted; }
+      catch (e) { out.openai.creditError = String(e.message || e); }
+    })(),
+    // Venice reports real remaining balances
+    (async () => {
+      if (!keys.venice) return;
+      try { const b = await veniceBalance(keys.venice); out.venice = { usd: b.usd, vcu: b.vcu, diem: b.diem }; }
+      catch (e) { out.venice.error = String(e.message || e); }
     })(),
   ]);
   return json(out);

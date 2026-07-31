@@ -449,7 +449,35 @@ body[data-theme="terminal"]{--void:#050805;--panel:#0A0F0A;--panel2:#0D140D;--li
 body[data-screen="chat"] main.deck{display:none}
 body[data-screen="board"] #chatView{display:none}
 
-.chatview{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;background:var(--void)}
+.chatview{flex:1;display:flex;min-width:0;min-height:0;background:var(--void)}
+.cv-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+
+/* ---- thread rail ---- */
+.threadbar{width:236px;flex:0 0 236px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+#chatView.tb-collapsed .threadbar{display:none}
+.tb-h{display:flex;align-items:center;gap:8px;padding:10px 10px 8px;border-bottom:1px solid var(--line)}
+.tb-ttl{font-size:10px;letter-spacing:.14em;font-weight:800;color:var(--faint);flex:1}
+.tb-h .tbtn{padding:4px 9px;font-size:10.5px;white-space:nowrap}
+.tb-list{flex:1;overflow-y:auto;padding:6px}
+.tb-foot{padding:6px 12px 9px;border-top:1px solid var(--line)}
+.tb-grp{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:700;
+  padding:10px 8px 5px;display:flex;align-items:center;gap:6px}
+.tb-grp .pj{color:var(--pri)}
+.tb-grp .add{margin-left:auto;background:transparent;color:var(--faint);padding:0 4px;font-size:12px;border-radius:4px}
+.tb-grp .add:hover{color:var(--pri)}
+.thitem{display:flex;align-items:center;gap:5px;border:1px solid transparent;border-radius:8px;padding:7px 8px;margin-bottom:2px;cursor:pointer;color:var(--dim)}
+.thitem:hover{background:var(--panel2);color:var(--txt)}
+.thitem.on{color:var(--txt);background:var(--panel2);border-color:var(--line2);font-weight:600;box-shadow:inset 2px 0 0 var(--pri)}
+.thitem .nm{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thitem .x{color:var(--faint);background:transparent;padding:1px 4px;border-radius:4px;visibility:hidden;font-size:11px}
+.thitem:hover .x{visibility:visible}
+.thitem .x:hover{color:var(--pri)}
+.tb-toggle{padding:4px 9px!important;font-size:12px}
+.cv-proj{font-size:10px;letter-spacing:.06em;color:var(--pri);border:1px solid color-mix(in srgb,var(--pri) 35%,transparent);
+  background:var(--pri-dim);border-radius:999px;padding:2px 9px;white-space:nowrap}
+#chatTitle{cursor:pointer;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chatTitle:hover{color:var(--pri-hi)}
+@media(max-width:900px){.threadbar{position:absolute;left:0;top:0;bottom:0;z-index:12;box-shadow:var(--sh-3)}}
 .cv-bar{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
 .cv-bar .sp{flex:1}
 .cv-ttl{font-size:10.5px;letter-spacing:.14em;font-weight:800;color:var(--pri);white-space:nowrap}
@@ -544,9 +572,17 @@ body[data-screen="board"] #chatView{display:none}
 
   <div class="body">
     <section id="chatView" class="chatview">
+      <!-- thread rail: every chat is its own renamable thread; projects group them -->
+      <aside id="threadBar" class="threadbar">
+        <div class="tb-h"><span class="tb-ttl">THREADS</span><button class="tbtn" id="thNew" title="start a new chat thread">＋ New chat</button></div>
+        <div class="tb-list" id="threadList"></div>
+        <div class="tb-foot"><span class="hint" id="thCount"></span></div>
+      </aside>
+      <div class="cv-main">
       <div class="cv-bar">
-        <span class="cv-ttl">DUAL MIND</span>
-        <select id="chatThreadSel" title="which conversation this is — Raw dual chat, or any chat project"></select>
+        <button class="tbtn tb-toggle" id="thToggle" title="show / hide the thread list">☰</button>
+        <span class="cv-ttl" id="chatTitle" title="click to rename this thread">DUAL MIND</span>
+        <span class="cv-proj hide" id="chatProj" title="this thread belongs to a project — its rules and skills apply to every message"></span>
         <!-- lane toggles live here (not in the column headers) so a lane you switched
              off still has a visible button to switch it back on -->
         <button class="lanetog on a" id="togClaude" title="show / hide Claude's column">Claude</button>
@@ -573,6 +609,7 @@ body[data-screen="board"] #chatView{display:none}
         </div>
       </div>
       <button class="cv-jump hide" id="chatJump" title="jump to the newest message">↓ latest</button>
+      </div>
     </section>
 
     <main class="deck">
@@ -645,10 +682,11 @@ body[data-screen="board"] #chatView{display:none}
   <div class="krow"><input id="artcraftKey" type="password" placeholder="paste ArtCraft API key" /><button class="btn-solid" id="artcraftSave">Save</button></div><div class="status" id="artcraftStatus">not connected</div>
 </div></div></div>
 <div id="npModal" class="modal hide"><div class="modal-card sm"><div class="modal-h"><span id="npTitle">New project</span><div class="sp"></div><button class="x" id="npCancel">✕</button></div><div class="modal-b">
+  <div class="hintline" style="padding:0 0 10px">A project is a <b>context container</b>: its instructions and every skill you attach are applied to <b>each thread filed under it</b> and to everything generated on its board.</div>
   <label class="flabel">Name</label><input id="npName" style="width:100%" placeholder="Kaiju Titan Comedy" />
   <label class="flabel">Type</label><select id="npType" style="width:100%"><option value="chat">chat</option><option value="video">video</option><option value="image">image</option></select>
   <label class="flabel">Instructions (system prompt)</label><textarea id="npInstr" style="width:100%;min-height:120px"></textarea>
-  <label class="flabel">Add skills <span style="color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0">— fold one or more skills into this project</span></label>
+  <label class="flabel">Skills <span style="color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0">— tick as many as you like; all of them apply to this project's threads and renders</span></label>
   <div id="npSkills" style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:4px"></div>
   <div style="margin-top:14px"><button class="btn-solid" id="npSave">Save</button></div>
 </div></div></div>
@@ -660,6 +698,6 @@ body[data-screen="board"] #chatView{display:none}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=58"></script>
+<script src="app.js?v=59"></script>
 </body>
 </html>

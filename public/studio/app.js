@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 58; // v58: full-screen Chat / Board workspaces, Claude+GPT side-by-side lanes, scroll no longer yanks to bottom
+const BUILD = 59; // v59: real threads (rail, rename, auto-title) separated from projects; projects = context containers; live credits
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -147,6 +147,8 @@ function pushBalance(provider) {
 }
 // Month-to-date org spend pulled from the providers' cost APIs (needs admin keys).
 let orgSpend = { anthropic: null, openai: null, anthropicErr: null, openaiErr: null };
+// REMAINING credit where a provider actually exposes it (OpenAI grants, Venice balances).
+let credits = { openai: null, openaiErr: null, anthropicNote: "", venice: { usd: null, vcu: null, diem: null } };
 async function loadSpend() {
   try {
     const d = await api("/api/spend");
@@ -154,6 +156,13 @@ async function loadSpend() {
     orgSpend.openai = d.openai && d.openai.monthUsd != null ? Number(d.openai.monthUsd) : null;
     orgSpend.anthropicErr = (d.anthropic && d.anthropic.error) || null;
     orgSpend.openaiErr = (d.openai && d.openai.error) || null;
+    credits.openai = d.openai && d.openai.creditUsd != null ? Number(d.openai.creditUsd) : null;
+    credits.openaiErr = (d.openai && d.openai.creditError) || null;
+    credits.anthropicNote = (d.anthropic && d.anthropic.creditNote) || "";
+    if (d.venice) {
+      credits.venice = { usd: d.venice.usd != null ? Number(d.venice.usd) : null, vcu: d.venice.vcu != null ? Number(d.venice.vcu) : null, diem: d.venice.diem != null ? Number(d.venice.diem) : null };
+      if (credits.venice.usd != null) veniceUsd = credits.venice.usd;
+    }
   } catch {}
   updateMeters();
 }
@@ -177,19 +186,25 @@ const fmtSpend = (v) => "$" + (v >= 1 ? v.toFixed(2) : v.toFixed(3));
 function updateMeters() {
   const parts = [];
   const balHint = (p) => `counted down from the balance you set in Connections — every panel chat, board ask, prompt-write and render is charged. Exact: $${(acctBal[p] || 0).toFixed(4)}`;
-  // REAL month-to-date spend straight from the provider (admin key in Connections).
-  if (orgSpend.anthropic != null) parts.push(`<span title="Anthropic org spend this month — live from the cost API">claude spent <b>${fmtSpend(orgSpend.anthropic)}</b> this mo</span>`);
+  // Priority: real REMAINING credit > real month spend > the balance you set by hand.
+  if (orgSpend.anthropic != null) parts.push(`<span title="Anthropic org spend this month — live from the cost API. ${esc(credits.anthropicNote)}">claude spent <b>${fmtSpend(orgSpend.anthropic)}</b> this mo</span>`);
   else if (orgSpend.anthropicErr) parts.push(`<span title="${esc(orgSpend.anthropicErr)}" style="color:var(--red);opacity:.8">claude spend ⚠</span>`);
   else parts.push(acctBal.anthropic != null
     ? `<span title="${balHint("anthropic")}">claude <b>${fmtUsd(acctBal.anthropic)}</b> left</span>`
     : `<span title="For LIVE spend, add an Anthropic ADMIN key in Connections. Or set a balance and the studio counts down from real usage." style="opacity:.7">claude — set balance</span>`);
-  if (orgSpend.openai != null) parts.push(`<span title="OpenAI org spend this month — live from the cost API">gpt spent <b>${fmtSpend(orgSpend.openai)}</b> this mo</span>`);
+  if (credits.openai != null) parts.push(`<span title="OpenAI credits REMAINING — live from the billing credit-grants endpoint">gpt <b>${fmtUsd(credits.openai)}</b> credits</span>`);
+  else if (orgSpend.openai != null) parts.push(`<span title="OpenAI org spend this month — live from the cost API${credits.openaiErr ? " · credits: " + esc(credits.openaiErr) : ""}">gpt spent <b>${fmtSpend(orgSpend.openai)}</b> this mo</span>`);
   else if (orgSpend.openaiErr) parts.push(`<span title="${esc(orgSpend.openaiErr)}" style="color:var(--red);opacity:.8">gpt spend ⚠</span>`);
   else parts.push(acctBal.openai != null
     ? `<span title="${balHint("openai")}">gpt <b>${fmtUsd(acctBal.openai)}</b> left</span>`
     : `<span title="For LIVE spend, add an OpenAI ADMIN key in Connections. Or set a balance and the studio counts down from real usage." style="opacity:.7">gpt — set balance</span>`);
   if (sessionSpend > 0) parts.push(`<span title="Claude + GPT cost this session — panel chats, board asks, prompt-writing and GPT-image renders (renders are close estimates). Exact: $${sessionSpend.toFixed(4)}">session ~<b>${fmtSpend(sessionSpend)}</b></span>`);
-  if (veniceUsd != null) parts.push(`<span title="Venice balance remaining — live from the Venice API">venice <b>$${veniceUsd.toFixed(2)}</b> left</span>`);
+  if (veniceUsd != null) {
+    const v = credits.venice, extra = [];
+    if (v.vcu != null) extra.push(v.vcu.toFixed(v.vcu < 100 ? 1 : 0) + " VCU");
+    if (v.diem != null) extra.push(v.diem.toFixed(v.diem < 100 ? 1 : 0) + " DIEM");
+    parts.push(`<span title="Venice credit remaining — live from the Venice API${extra.length ? " · " + extra.join(" · ") : ""}">venice <b>$${veniceUsd.toFixed(2)}</b> left${extra.length ? ` <span style="opacity:.65">(${extra.join(" · ")})</span>` : ""}</span>`);
+  }
   // ArtCraft credits remaining (only meaningful once its server-side wall clears).
   if (artcraftState === "connected" && artcraftCredits != null) parts.push(`<span title="ArtCraft credits remaining">artcraft <b>${fmtCredits(artcraftCredits)}</b> left</span>`);
   else if (artcraftState === "connected") parts.push(`<span title="ArtCraft is connected but its credit balance can't be read server-side yet">artcraft <b>connected</b></span>`);
@@ -241,8 +256,11 @@ async function showApp() {
   hide("login"); show("app"); $("operator").textContent = "operator: " + userFromToken(token);
   applyLaneToggles();
   await Promise.all([loadProjects(), loadModels()]);
+  await loadThreads();
+  if (!threadById(chatThread)) chatThread = (threads[0] && threads[0].id) || "__raw";
   await setThread(chatThread);
   renderSpace();
+  try { if (localStorage.getItem("plx-threadbar") === "0") $("chatView").classList.add("tb-collapsed"); } catch {}
   setScreen(localStorage.getItem("plx-screen") === "chat" ? "chat" : "board");
   loadCredits(); loadStatus(); loadBalances(); loadSpend();
 }
@@ -271,17 +289,110 @@ function chatAtBottom() { const el = $("chatTurns"); return !el || el.scrollHeig
 function chatScrollBottom() { const el = $("chatTurns"); if (el) el.scrollTop = el.scrollHeight; chatJumpUpd(); }
 function chatJumpUpd() { const b = $("chatJump"); if (b) b.classList.toggle("hide", chatAtBottom()); }
 function chatStick(wasAtBottom) { if (wasAtBottom) { const el = $("chatTurns"); if (el) el.scrollTop = el.scrollHeight; } chatJumpUpd(); }
-function fillThreadSel() {
-  const sel = $("chatThreadSel"); if (!sel) return;
-  sel.innerHTML = "";
-  const opts = [{ id: "__raw", name: "Raw dual chat" }, ...projects.filter((p) => p.type === "chat")];
-  for (const o of opts) { const op = document.createElement("option"); op.value = o.id; op.textContent = o.name; sel.appendChild(op); }
-  if (!opts.some((o) => o.id === chatThread)) chatThread = "__raw";
-  sel.value = chatThread;
+/* ---- THREADS ----------------------------------------------------------------
+   A thread is one conversation on one topic: renamable, deletable, kept forever.
+   A PROJECT is a different thing — a container of rules/skills/reference. A thread
+   may belong to a project, and then every message in it inherits that context.
+   Thread ids double as conversation keys, so legacy ids ("__raw", old project ids)
+   keep their history with no migration. -------------------------------------- */
+let threads = [];
+const threadById = (id) => threads.find((t) => t.id === id) || null;
+const threadProjectId = (id) => { const t = threadById(id); return t && t.projectId && projects.some((p) => p.id === t.projectId) ? t.projectId : null; };
+
+async function loadThreads() {
+  try { const d = await api("/api/threads"); threads = d.threads || []; } catch { threads = []; }
+  if (!threads.length) await migrateThreads();
+  renderThreads();
+}
+// First run on an account: adopt whatever conversations already exist so no history is
+// orphaned — the raw chat, plus one thread per chat project (thread id = project id).
+async function migrateThreads() {
+  const seeds = [{ forceId: "__raw", title: "Raw dual chat", projectId: null }];
+  for (const p of projects.filter((x) => x.type === "chat")) seeds.push({ forceId: p.id, title: p.name, projectId: p.id });
+  for (const sd of seeds) { try { const d = await api("/api/threads", sd); threads = d.threads || threads; } catch {} }
+}
+function renderThreads() {
+  const box = $("threadList"); if (!box) return;
+  box.innerHTML = "";
+  const cnt = $("thCount"); if (cnt) cnt.textContent = threads.length + (threads.length === 1 ? " thread" : " threads");
+  // group: one section per project that owns threads, then everything unfiled
+  const groups = [];
+  for (const p of projects) {
+    const mine = threads.filter((t) => t.projectId === p.id);
+    if (mine.length) groups.push({ id: p.id, name: p.name, items: mine });
+  }
+  const loose = threads.filter((t) => !t.projectId || !projects.some((p) => p.id === t.projectId));
+  if (loose.length) groups.push({ id: null, name: "No project", items: loose });
+  if (!groups.length) { box.innerHTML = '<div class="empty" style="padding:16px 8px">No threads yet — start one.</div>'; return; }
+
+  for (const g of groups) {
+    const h = document.createElement("div"); h.className = "tb-grp";
+    h.innerHTML = g.id ? `<span class="pj">▣</span><span>${esc(g.name)}</span>` : `<span>${esc(g.name)}</span>`;
+    if (g.id) {
+      const add = document.createElement("button"); add.className = "add"; add.textContent = "＋"; add.title = "new thread in this project";
+      add.onclick = (e) => { e.stopPropagation(); newThread(g.id); };
+      h.appendChild(add);
+    }
+    box.appendChild(h);
+    for (const t of g.items) {
+      const el = document.createElement("div"); el.className = "thitem" + (t.id === chatThread ? " on" : "");
+      el.innerHTML = `<span class="nm">${esc(t.title || "Untitled")}</span>`;
+      el.title = t.title || "Untitled";
+      el.onclick = () => setThread(t.id);
+      const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "rename";
+      ed.onclick = (e) => { e.stopPropagation(); renameThread(t.id); };
+      const del = document.createElement("button"); del.className = "x"; del.textContent = "🗑"; del.title = "delete this thread";
+      del.onclick = (e) => { e.stopPropagation(); deleteThread(t.id); };
+      el.appendChild(ed); el.appendChild(del); box.appendChild(el);
+    }
+  }
+}
+async function newThread(projectId) {
+  try {
+    const d = await api("/api/threads", { title: "New chat", projectId: projectId || null });
+    threads = d.threads || threads;
+    setScreen("chat");
+    await setThread(d.thread.id);
+    toast(projectId ? "new thread in this project" : "new thread");
+  } catch { toast("couldn't create the thread"); }
+}
+async function renameThread(id) {
+  const t = threadById(id); if (!t) return;
+  const name = (prompt("Rename thread:", t.title || "") || "").trim(); if (!name) return;
+  try { const d = await api("/api/threads", { id, title: name }); threads = d.threads || threads; renderThreads(); paintThreadHead(); toast("renamed"); }
+  catch { toast("rename failed"); }
+}
+async function deleteThread(id) {
+  const t = threadById(id); if (!t) return;
+  if (!confirm(`Delete thread “${t.title || "Untitled"}”? Its messages go with it; gallery media stays.`)) return;
+  try {
+    const d = await api("/api/threads?id=" + encodeURIComponent(id), null, "DELETE");
+    threads = d.threads || threads.filter((x) => x.id !== id);
+    delete colConvos[id]; loadedConvos.delete(id);
+    if (chatThread === id) { if (threads.length) await setThread(threads[0].id); else await newThread(null); }
+    else { renderThreads(); }
+    toast("thread deleted");
+  } catch { toast("delete failed"); }
+}
+// Name a brand-new thread after its first message, the way a good notebook titles itself.
+async function autoTitleThread(id, firstText) {
+  const t = threadById(id); if (!t || !firstText) return;
+  if (t.title && t.title !== "New chat" && t.title !== "Raw dual chat") return;
+  const title = firstText.replace(/\s+/g, " ").trim().slice(0, 48);
+  if (!title) return;
+  try { const d = await api("/api/threads", { id, title }); threads = d.threads || threads; renderThreads(); paintThreadHead(); } catch {}
+}
+function paintThreadHead() {
+  const t = threadById(chatThread);
+  const ttl = $("chatTitle"); if (ttl) ttl.textContent = (t && t.title) || "DUAL MIND";
+  const pj = $("chatProj"); if (!pj) return;
+  const p = t && t.projectId ? projects.find((x) => x.id === t.projectId) : null;
+  pj.classList.toggle("hide", !p);
+  if (p) pj.textContent = "▣ " + p.name + " · rules & skills apply";
 }
 async function setThread(id) {
   chatThread = id; try { localStorage.setItem("plx-thread", id); } catch {}
-  fillThreadSel();
+  renderThreads(); paintThreadHead();
   await loadConvo(id);
   renderChatStream();
 }
@@ -347,7 +458,7 @@ async function panelSend(collab) {
       if (laneOn.gpt) jobs.push(streamCol("gpt", $("mGpt").value, chatThread, row.gpt));
       await Promise.all(jobs);
     }
-  } finally { chatBusy = false; st.textContent = ""; saveConvo(chatThread); }
+  } finally { chatBusy = false; st.textContent = ""; saveConvo(chatThread); autoTitleThread(chatThread, text); }
 }
 function applyLaneToggles() {
   $("togClaude").classList.toggle("on", laneOn.claude); $("togClaude").classList.toggle("off", !laneOn.claude);
@@ -379,19 +490,29 @@ async function fillModels(provider, selId, stateId) {
 /* projects */
 async function loadProjects() { const d = await api("/api/projects"); projects = d.projects || []; renderProjects(); }
 function renderProjects() {
-  fillThreadSel();
+  renderThreads();
   const cnt = $("projCount"); if (cnt) cnt.textContent = projects.length;
   const box = $("projList"); if (!box) return; box.innerHTML = "";
   if (!projects.length) { box.innerHTML = '<div class="empty" style="margin:14px 0">No projects yet — create one, or add a skill from the library.</div>'; return; }
   for (const p of projects) {
-    const el = document.createElement("div"); el.className = "pitem" + (p.id === chatThread ? " on" : "");
-    el.innerHTML = `<span class="nm">${esc(p.name)}</span><span class="badge t">${p.type}</span>` + (p.author ? `<span class="badge author">${esc(p.author)}</span>` : "");
-    el.title = p.type === "chat" ? "open this project — its chat thread in the panel AND its board on the stage" : "open this project's board — its renders file into its gallery folder and use its instructions";
+    const nSk = (p.attachedSkills || []).length;
+    const nTh = threads.filter((t) => t.projectId === p.id).length;
+    const el = document.createElement("div"); el.className = "pitem" + (threadProjectId(chatThread) === p.id ? " on" : "");
+    el.innerHTML = `<span class="nm">${esc(p.name)}</span>`
+      + `<span class="badge t" title="skills attached to this project — they shape every thread and render inside it">⚡ ${nSk}</span>`
+      + `<span class="badge" title="chat threads filed under this project">💬 ${nTh}</span>`
+      + (p.author ? `<span class="badge author">${esc(p.author)}</span>` : "");
+    el.title = "open this project — its newest thread and its board, with its rules and skills applied";
     el.onclick = async () => {
       hide("projModal");
-      if (p.type === "chat") { setScreen("chat"); await setThread(p.id); }
+      const mine = threads.filter((t) => t.projectId === p.id);
+      if (mine.length) { setScreen("chat"); await setThread(mine[0].id); }
+      else await newThread(p.id);
       await cvOpenProjectBoard(p);
     };
+    const addT = document.createElement("button"); addT.className = "x"; addT.textContent = "💬"; addT.title = "start a new thread in this project";
+    addT.onclick = (e) => { e.stopPropagation(); hide("projModal"); newThread(p.id); };
+    el.appendChild(addT);
     const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "rename / edit";
     ed.onclick = (e) => { e.stopPropagation(); hide("projModal"); openEdit(p); };
     const x = document.createElement("button"); x.className = "x"; x.textContent = "🗑"; x.title = "delete project";
@@ -399,10 +520,12 @@ function renderProjects() {
       e.stopPropagation();
       if (!confirm(`Delete “${p.name}”? Its saved conversation goes too; gallery media stays.`)) return;
       await api("/api/projects?id=" + p.id, null, "DELETE");
-      api("/api/conversations?projectId=" + p.id, null, "DELETE").catch(() => {});
-      delete colConvos[p.id]; loadedConvos.delete(p.id);
-      if (chatThread === p.id) await setThread("__raw");
-      await loadProjects(); toast("project deleted");
+      // keep the conversations: just detach their threads so nothing is lost
+      for (const t of threads.filter((x) => x.projectId === p.id)) {
+        try { const d = await api("/api/threads", { id: t.id, projectId: null }); threads = d.threads || threads; } catch {}
+      }
+      await loadProjects(); renderThreads(); paintThreadHead();
+      toast("project deleted — its threads kept, now unfiled");
     };
     el.appendChild(ed); el.appendChild(x); box.appendChild(el);
   }
@@ -463,7 +586,8 @@ async function streamCol(provider, model, id, streamEl, extraUser) {
     return { role: t.who === "user" ? "user" : "assistant", content: t.text };
   });
   if (extraUser) messages.push({ role: "user", content: extraUser });
-  const payload = { provider, model, messages }; if (id !== "__raw") payload.projectId = id;
+  const payload = { provider, model, messages };
+  const pid = threadProjectId(id); if (pid) payload.projectId = pid;   // project context, not the thread id
   let res; try { res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) }); }
   catch (e) { w.className = "msg err"; bub.textContent = "⚠ network error: " + e; return; }
   const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", errored = false;
@@ -537,10 +661,10 @@ async function showInfo(s) {
 }
 async function addSkill(s) {
   const d = await api("/api/skills", { skillId: s.id });
-  if (d.ok) { await loadProjects(); if (d.project.type === "chat") { setScreen("chat"); await setThread(d.project.id); } toast(`Added “${s.name}”`); openSkills(); }
+  if (d.ok) { await loadProjects(); renderThreads(); toast(`Added “${s.name}” — attach it to a project to apply it`); openSkills(); }
   else toast(d.error || "add failed");
 }
-async function removeSkill(p) { await api("/api/projects?id=" + p.id, null, "DELETE"); await loadProjects(); if (chatThread === p.id) await setThread("__raw"); openSkills(); toast("Removed"); }
+async function removeSkill(p) { await api("/api/projects?id=" + p.id, null, "DELETE"); await loadProjects(); renderThreads(); openSkills(); toast("Removed"); }
 
 /* connections */
 async function openConnections() {
@@ -1785,7 +1909,12 @@ $("scrBoard").onclick = () => setScreen("board");
 $("chatToBoard").onclick = () => setScreen("board");
 $("chatTurns").addEventListener("scroll", chatJumpUpd, { passive: true });
 $("chatJump").onclick = chatScrollBottom;
-$("chatThreadSel").onchange = (e) => setThread(e.target.value);
+$("thNew").onclick = () => newThread(threadProjectId(chatThread));
+$("chatTitle").onclick = () => renameThread(chatThread);
+$("thToggle").onclick = () => {
+  const cv = $("chatView"); const col = cv.classList.toggle("tb-collapsed");
+  try { localStorage.setItem("plx-threadbar", col ? "0" : "1"); } catch {}
+};
 $("projBtn").onclick = () => { renderProjects(); show("projModal"); };
 $("projClose").onclick = () => hide("projModal");
 $("togClaude").onclick = () => toggleLane("claude");

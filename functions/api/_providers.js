@@ -80,10 +80,44 @@ export async function veniceModels(key, type) {
   }
   return models;
 }
+// Venice publishes real remaining balances on its key endpoint (USD + VCU + DIEM).
+// Fall back to the balance header on /models if that endpoint ever moves.
 export async function veniceBalance(key) {
+  try {
+    const r = await fetch(`${VENICE}/api_keys/rate_limits`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(12000) });
+    if (r.ok) {
+      const d = await r.json();
+      const b = (d && (d.data || d)) || {};
+      const bal = b.balances || b.balance || {};
+      const num = (v) => (v == null || v === "" || isNaN(Number(v)) ? null : Number(v));
+      const usd = num(bal.USD != null ? bal.USD : bal.usd);
+      const vcu = num(bal.VCU != null ? bal.VCU : bal.vcu);
+      const diem = num(bal.DIEM != null ? bal.DIEM : bal.diem);
+      if (usd != null || vcu != null || diem != null) return { usd, vcu, diem };
+    }
+  } catch { /* fall through to the header probe */ }
   const res = await fetch(`${VENICE}/models?type=image`, { headers: { Authorization: `Bearer ${key}` } });
   const usd = res.headers.get("x-venice-balance-usd");
-  return { usd: usd != null ? Number(usd) : null };
+  const vcu = res.headers.get("x-venice-balance-vcu");
+  const diem = res.headers.get("x-venice-balance-diem");
+  return { usd: usd != null ? Number(usd) : null, vcu: vcu != null ? Number(vcu) : null, diem: diem != null ? Number(diem) : null };
+}
+
+// OpenAI credit grants — the one OpenAI surface that reports REMAINING credit rather
+// than spend. It's a dashboard endpoint, so an ordinary sk- key may be refused; we say
+// so plainly instead of guessing. Admin key is tried first when present.
+export async function openaiCredits(key) {
+  const r = await fetch("https://api.openai.com/v1/dashboard/billing/credit_grants", {
+    headers: { Authorization: "Bearer " + key }, signal: AbortSignal.timeout(12000),
+  });
+  const raw = await r.text();
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) throw new Error("OpenAI refused this key for credit grants — the billing dashboard endpoint often only accepts an admin key (or a session token). Month-to-date spend still works.");
+    throw new Error(`OpenAI credit grants ${r.status}: ${raw.slice(0, 120)}`);
+  }
+  let d; try { d = JSON.parse(raw); } catch { throw new Error("OpenAI credit grants sent an unreadable response"); }
+  const n = (v) => (v == null || isNaN(Number(v)) ? null : Number(v));
+  return { available: n(d.total_available), granted: n(d.total_granted), used: n(d.total_used) };
 }
 // A slow model (or a multi-variant render) can outlive the platform's patience — without
 // our own timeout the isolate gets killed and the client sees an HTML 502 instead of a
