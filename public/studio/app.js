@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 57; // v57: themes restored (20 palettes), board→chat "send linked images", Space renamed Neural Board
+const BUILD = 58; // v58: full-screen Chat / Board workspaces, Claude+GPT side-by-side lanes, scroll no longer yanks to bottom
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -241,9 +241,9 @@ async function showApp() {
   hide("login"); show("app"); $("operator").textContent = "operator: " + userFromToken(token);
   applyLaneToggles();
   await Promise.all([loadProjects(), loadModels()]);
-  toggleChatPanel(localStorage.getItem("plx-chat-open") !== "0");
   await setThread(chatThread);
   renderSpace();
+  setScreen(localStorage.getItem("plx-screen") === "chat" ? "chat" : "board");
   loadCredits(); loadStatus(); loadBalances(); loadSpend();
 }
 
@@ -254,13 +254,23 @@ function renderChatAtts() {
   const box = $("chatAtts"); if (!box) return; box.innerHTML = "";
   chatAtts.forEach((a, i) => { const el = document.createElement("div"); el.className = "att"; el.innerHTML = `<img src="${a.dataUrl}"><button class="x">✕</button>`; el.querySelector(".x").onclick = () => { chatAtts.splice(i, 1); renderChatAtts(); }; box.appendChild(el); });
 }
-function chatPanelOpen() { return !$("chatPanel").classList.contains("hide"); }
-function toggleChatPanel(force) {
-  const open = force != null ? force : !chatPanelOpen();
-  $("chatPanel").classList.toggle("hide", !open);
-  $("chatToggle").classList.toggle("on", open);
-  try { localStorage.setItem("plx-chat-open", open ? "1" : "0"); } catch {}
+/* Two full-screen workspaces. Exactly one owns the window; the choice is remembered. */
+function setScreen(name) {
+  const s = name === "chat" ? "chat" : "board";
+  document.body.dataset.screen = s;
+  $("scrChat").classList.toggle("on", s === "chat");
+  $("scrBoard").classList.toggle("on", s === "board");
+  try { localStorage.setItem("plx-screen", s); } catch {}
+  if (s === "board") renderSpace();
+  else { chatScrollBottom(); const ta = $("chatText"); if (ta) ta.focus(); }
 }
+/* Auto-scroll rule: only stick to the bottom when the reader is ALREADY there.
+   Scroll up mid-stream and the view stays put — a "↓ latest" button appears instead. */
+const CHAT_STICK = 150;
+function chatAtBottom() { const el = $("chatTurns"); return !el || el.scrollHeight - el.scrollTop - el.clientHeight < CHAT_STICK; }
+function chatScrollBottom() { const el = $("chatTurns"); if (el) el.scrollTop = el.scrollHeight; chatJumpUpd(); }
+function chatJumpUpd() { const b = $("chatJump"); if (b) b.classList.toggle("hide", chatAtBottom()); }
+function chatStick(wasAtBottom) { if (wasAtBottom) { const el = $("chatTurns"); if (el) el.scrollTop = el.scrollHeight; } chatJumpUpd(); }
 function fillThreadSel() {
   const sel = $("chatThreadSel"); if (!sel) return;
   sel.innerHTML = "";
@@ -273,14 +283,43 @@ async function setThread(id) {
   chatThread = id; try { localStorage.setItem("plx-thread", id); } catch {}
   fillThreadSel();
   await loadConvo(id);
-  renderPanelStream();
+  renderChatStream();
 }
-function renderPanelStream() {
-  const el = $("panelStream"); if (!el) return;
+// Group the flat conversation into turns: one prompt, then each mind's answer in its own lane.
+function chatGroupTurns(conv) {
+  const turns = []; let cur = null;
+  for (const t of conv) {
+    if (t.who === "user") { cur = { q: t, claude: [], gpt: [] }; turns.push(cur); }
+    else { if (!cur) { cur = { q: null, claude: [], gpt: [] }; turns.push(cur); } if (cur[t.who]) cur[t.who].push(t); }
+  }
+  return turns;
+}
+// Build one turn row. Returns the element plus its two lane cells so a live
+// stream can write straight into them.
+function chatTurnEl(userTurn) {
+  const el = document.createElement("div"); el.className = "turn";
+  if (userTurn) { const q = document.createElement("div"); q.className = "turn-q"; q.appendChild(bubbleFor(userTurn)); el.appendChild(q); }
+  const a = document.createElement("div"); a.className = "turn-a";
+  const claude = document.createElement("div"); claude.className = "lane claude";
+  const gpt = document.createElement("div"); gpt.className = "lane gpt";
+  a.appendChild(claude); a.appendChild(gpt); el.appendChild(a);
+  return { el, claude, gpt };
+}
+function renderChatStream() {
+  const el = $("chatTurns"); if (!el) return;
   const conv = colConvos[chatThread] || [];
-  if (!conv.length) { el.innerHTML = '<div class="empty">Both minds answer here, stacked.<br><br>Brainstorm in the panel — build it on the board →</div>'; return; }
-  el.innerHTML = ""; for (const t of conv) el.appendChild(bubbleFor(t));
-  el.scrollTop = el.scrollHeight;
+  el.innerHTML = "";
+  if (!conv.length) {
+    el.innerHTML = '<div class="empty">Ask once — both minds answer side by side.<br><br>Claude on the left, ChatGPT on the right. Use <b>Collab</b> to have Claude answer first and ChatGPT build on it.</div>';
+    chatJumpUpd(); return;
+  }
+  for (const t of chatGroupTurns(conv)) {
+    const row = chatTurnEl(t.q);
+    for (const m of t.claude) row.claude.appendChild(bubbleFor(m));
+    for (const m of t.gpt) row.gpt.appendChild(bubbleFor(m));
+    el.appendChild(row.el);
+  }
+  chatScrollBottom();
 }
 async function panelSend(collab) {
   if (chatBusy) return;
@@ -289,23 +328,23 @@ async function panelSend(collab) {
   if (!text && !atts.length) return;
   chatBusy = true; const st = $("chatStatus"); st.textContent = collab ? "collaborating…" : "streaming…"; ta.value = "";
   chatAtts = []; renderChatAtts();
-  const streamEl = $("panelStream");
-  if (!(colConvos[chatThread] || []).length) streamEl.innerHTML = "";
-  clearEmpty(streamEl);
+  const wrap = $("chatTurns");
+  clearEmpty(wrap);
   const turn = { who: "user", text, images: atts.map((a) => ({ media_type: a.media_type, data: a.data })), thumbs: atts.map((a) => a.dataUrl) };
   colConvos[chatThread] = colConvos[chatThread] || []; colConvos[chatThread].push(turn);
-  streamEl.appendChild(bubbleFor(turn)); streamEl.scrollTop = streamEl.scrollHeight;
+  const row = chatTurnEl(turn);
+  wrap.appendChild(row.el); chatScrollBottom();
   try {
     const both = laneOn.claude && laneOn.gpt;
     if (collab && both) {
-      await streamCol("claude", $("mClaude").value, chatThread, streamEl);
+      await streamCol("claude", $("mClaude").value, chatThread, row.claude);
       const last = [...colConvos[chatThread]].reverse().find((t) => t.who === "claude");
       const extra = last ? `Claude (the other mind) responded:\n\n${last.text}\n\nGive your own take — agree, disagree, or build on it.` : null;
-      await streamCol("gpt", $("mGpt").value, chatThread, streamEl, extra);
+      await streamCol("gpt", $("mGpt").value, chatThread, row.gpt, extra);
     } else {
       const jobs = [];
-      if (laneOn.claude) jobs.push(streamCol("claude", $("mClaude").value, chatThread, streamEl));
-      if (laneOn.gpt) jobs.push(streamCol("gpt", $("mGpt").value, chatThread, streamEl));
+      if (laneOn.claude) jobs.push(streamCol("claude", $("mClaude").value, chatThread, row.claude));
+      if (laneOn.gpt) jobs.push(streamCol("gpt", $("mGpt").value, chatThread, row.gpt));
       await Promise.all(jobs);
     }
   } finally { chatBusy = false; st.textContent = ""; saveConvo(chatThread); }
@@ -313,6 +352,8 @@ async function panelSend(collab) {
 function applyLaneToggles() {
   $("togClaude").classList.toggle("on", laneOn.claude); $("togClaude").classList.toggle("off", !laneOn.claude);
   $("togGpt").classList.toggle("on", laneOn.gpt); $("togGpt").classList.toggle("off", !laneOn.gpt);
+  const cv = $("chatView");
+  if (cv) { cv.classList.toggle("no-claude", !laneOn.claude); cv.classList.toggle("no-gpt", !laneOn.gpt); }
 }
 function toggleLane(which) {
   if (laneOn[which] && !laneOn[which === "claude" ? "gpt" : "claude"]) { toast("keep at least one lane on"); return; }
@@ -348,7 +389,7 @@ function renderProjects() {
     el.title = p.type === "chat" ? "open this project — its chat thread in the panel AND its board on the stage" : "open this project's board — its renders file into its gallery folder and use its instructions";
     el.onclick = async () => {
       hide("projModal");
-      if (p.type === "chat") { toggleChatPanel(true); await setThread(p.id); }
+      if (p.type === "chat") { setScreen("chat"); await setThread(p.id); }
       await cvOpenProjectBoard(p);
     };
     const ed = document.createElement("button"); ed.className = "x"; ed.textContent = "✎"; ed.title = "rename / edit";
@@ -410,7 +451,8 @@ function bubbleFor(t) {
 async function streamCol(provider, model, id, streamEl, extraUser) {
   const w = document.createElement("div"); w.className = "msg " + provider;
   w.innerHTML = `<div class="who">${provider === "claude" ? "CLAUDE" : "CHATGPT"} <button class="copybtn">COPY</button></div><div class="bub"></div>`;
-  streamEl.appendChild(w); streamEl.scrollTop = streamEl.scrollHeight; const bub = w.querySelector(".bub");
+  const wasBottom = chatAtBottom();
+  streamEl.appendChild(w); chatStick(wasBottom); const bub = w.querySelector(".bub");
   const conv = colConvos[id] || [];
   const messages = conv.filter((t) => t.who === "user" || t.who === provider).map((t) => {
     if (t.who === "user" && t.images && t.images.length) {
@@ -431,7 +473,7 @@ async function streamCol(provider, model, id, streamEl, extraUser) {
     for (const line of lines) {
       const t = line.trim(); if (!t.startsWith("data:")) continue; const data = t.slice(5).trim(); if (data === "[DONE]") continue;
       let evt; try { evt = JSON.parse(data); } catch { continue; }
-      if (evt.delta) { bub.textContent += evt.delta; streamEl.scrollTop = streamEl.scrollHeight; }
+      if (evt.delta) { const atB = chatAtBottom(); bub.textContent += evt.delta; chatStick(atB); }
       else if (evt.usage) { addSpend(model, evt.usage.input || 0, evt.usage.output || 0); }
       else if (evt.error) { errored = true; w.className = "msg err"; bub.textContent = "⚠ " + evt.error; }
     }
@@ -495,7 +537,7 @@ async function showInfo(s) {
 }
 async function addSkill(s) {
   const d = await api("/api/skills", { skillId: s.id });
-  if (d.ok) { await loadProjects(); if (d.project.type === "chat") { toggleChatPanel(true); await setThread(d.project.id); } toast(`Added “${s.name}”`); openSkills(); }
+  if (d.ok) { await loadProjects(); if (d.project.type === "chat") { setScreen("chat"); await setThread(d.project.id); } toast(`Added “${s.name}”`); openSkills(); }
   else toast(d.error || "add failed");
 }
 async function removeSkill(p) { await api("/api/projects?id=" + p.id, null, "DELETE"); await loadProjects(); if (chatThread === p.id) await setThread("__raw"); openSkills(); toast("Removed"); }
@@ -539,7 +581,7 @@ function toggleRefDock() { const d = $("refDock"); if (d.classList.contains("hid
 function loadRefWallIfOpen() { if (!$("refDock").classList.contains("hide")) loadRefWall(); }
 // Attach one image (base64 data URL) to the Dual Mind composer, opening the panel if closed.
 function addImgToComposer(att) {
-  toggleChatPanel(true);
+  setScreen("chat");
   chatAtts.push(att); renderChatAtts(); return true;
 }
 function dataUrlToAtt(dataUrl) { const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || ""); return m ? { media_type: m[1], data: m[2], dataUrl } : null; }
@@ -628,7 +670,7 @@ async function moveSelectedTo(v) {
 // Route one image attachment: "chat" → Dual Mind composer, "board" → a node on the Space.
 function sendMediaTo(target, att) {
   if (!att) return false;
-  if (target === "board") { cvLoad(); const c = cvCenter(); cvAddImage(att.dataUrl, att.galleryId || null, c.x, c.y); toast("image on the board"); return true; }
+  if (target === "board") { setScreen("board"); cvLoad(); const c = cvCenter(); cvAddImage(att.dataUrl, att.galleryId || null, c.x, c.y); toast("image on the board"); return true; }
   return addImgToComposer(att);
 }
 
@@ -746,10 +788,8 @@ function makeResizer(el, edge, key, min, max) {
   h.addEventListener("pointerup", end); h.addEventListener("pointercancel", end);
 }
 function setupResizers() {
-  const panel = $("chatPanel"), ref = $("refDock");
-  makeResizer(panel, "right", "plx-w-chat", 300, 640);
+  const ref = $("refDock");
   makeResizer(ref, "left", "plx-w-ref", 210, 560);
-  try { const wc = localStorage.getItem("plx-w-chat"); if (wc && panel) panel.style.width = panel.style.flexBasis = wc + "px"; } catch {}
   try { const wr = localStorage.getItem("plx-w-ref"); if (wr && ref) ref.style.width = ref.style.flexBasis = wr + "px"; } catch {}
 }
 
@@ -773,7 +813,7 @@ async function sendVideoFramesToChat(src) {
   toast("sampling frames…");
   const frames = await extractFrames(src, 6);
   if (!frames.length) { toast("couldn't read video (a remote URL may block frame capture)"); return false; }
-  toggleChatPanel(true);
+  setScreen("chat");
   frames.forEach((f) => chatAtts.push(f)); renderChatAtts();
   const ta = $("chatText"); if (ta && !ta.value.trim()) ta.value = `Watch these ${frames.length} sampled frames from the clip and `;
   toast(`${frames.length} frames sent to chat`); if (ta) ta.focus();
@@ -783,11 +823,11 @@ async function sendVideoFramesToChat(src) {
 async function routeMediaTo(target, item) {
   if (!item || !item.src) return false;
   if (item.type === "video") {
-    if (target === "board") { await cvWhenReady(); cvLoad(); const c = cvCenter(); cvAddVideo(item.src, item.id || null, c.x, c.y, null); toast("clip on the board"); return true; }
+    if (target === "board") { setScreen("board"); await cvWhenReady(); cvLoad(); const c = cvCenter(); cvAddVideo(item.src, item.id || null, c.x, c.y, null); toast("clip on the board"); return true; }
     return await sendVideoFramesToChat(item.src);
   }
   const att = await srcToImgAtt(item.src); if (!att) { toast("couldn't read image"); return false; }
-  if (target === "board") { cvLoad(); const c = cvCenter(); await cvAddImage(att.dataUrl, item.id || null, c.x, c.y); toast("image on the board"); return true; }
+  if (target === "board") { setScreen("board"); cvLoad(); const c = cvCenter(); await cvAddImage(att.dataUrl, item.id || null, c.x, c.y); toast("image on the board"); return true; }
   const ok = sendMediaTo("chat", att); if (ok) toast("sent to chat"); return ok;
 }
 
@@ -821,7 +861,7 @@ function renderFramesPanel(wrap, frames, item) {
   const bar = document.createElement("div"); bar.className = "frmbar";
   bar.append(
     lbBtn("⬇ Save all", async () => { for (let i = 0; i < frames.length; i++) { const k = `frm:${item.id || "x"}:${i}`; if (localStorage.getItem(k) !== "1") await saveFrameToGallery(frames[i], item, i, null, k); } toast("saved frames to gallery"); loadRefWallIfOpen(); renderFramesPanel(wrap, frames, item); }),
-    lbBtn("→ All frames to Chat", async () => { toggleChatPanel(true); frames.forEach((f) => chatAtts.push(f)); renderChatAtts(); toast("frames sent to chat"); closeLightbox(); })
+    lbBtn("→ All frames to Chat", async () => { setScreen("chat"); frames.forEach((f) => chatAtts.push(f)); renderChatAtts(); toast("frames sent to chat"); closeLightbox(); })
   );
   wrap.appendChild(bar);
 }
@@ -867,7 +907,7 @@ async function extractFrames(src, n = 6) {
 // videos are sampled into frames (audio can't be analyzed via the API — we note that).
 async function sendSelectionToClaude() {
   const ids = Object.keys(galSel); if (!ids.length) return;
-  toggleChatPanel(true);
+  setScreen("chat");
   toast("preparing media…");
   const atts = []; let vidCount = 0, frameCount = 0, imgCount = 0, failed = 0;
   for (const id of ids) {
@@ -1219,7 +1259,7 @@ async function cvSendToChat(nid) {
   const imgs = comp.filter((x) => x.kind === "image" && x.dataUrl);
   const notes = comp.filter((x) => x.kind === "text" && (x.text || "").trim()).map((x) => x.text.trim());
   if (!imgs.length && !notes.length) { toast("nothing linked to send — connect an image or add a note"); return; }
-  toggleChatPanel(true);
+  setScreen("chat");
   let k = 0;
   for (const im of imgs) { const att = await shrinkAtt(dataUrlToAtt(im.dataUrl)); if (att) { chatAtts.push(att); k++; } }
   renderChatAtts();
@@ -1740,8 +1780,11 @@ setupResizers();
 $("loginBtn").onclick = login;
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 $("logoutBtn").onclick = logout;
-$("chatToggle").onclick = () => toggleChatPanel();
-$("chatCollapse").onclick = () => toggleChatPanel(false);
+$("scrChat").onclick = () => setScreen("chat");
+$("scrBoard").onclick = () => setScreen("board");
+$("chatToBoard").onclick = () => setScreen("board");
+$("chatTurns").addEventListener("scroll", chatJumpUpd, { passive: true });
+$("chatJump").onclick = chatScrollBottom;
 $("chatThreadSel").onchange = (e) => setThread(e.target.value);
 $("projBtn").onclick = () => { renderProjects(); show("projModal"); };
 $("projClose").onclick = () => hide("projModal");
@@ -1802,7 +1845,7 @@ $("chatFile").onchange = (e) => { collectImages(e.target.files, chatAtts, render
 $("chatMic").onclick = () => toggleMic($("chatText"), $("chatMic"));
 $("chatText").addEventListener("paste", (e) => { const its = [...((e.clipboardData && e.clipboardData.items) || [])].filter((it) => it.type && it.type.startsWith("image/")); if (its.length) { e.preventDefault(); collectImages(its.map((it) => it.getAsFile()).filter(Boolean), chatAtts, renderChatAtts); } });
 (function () {
-  const panel = $("chatPanel"); if (!panel) return;
+  const panel = $("chatView"); if (!panel) return;
   panel.addEventListener("dragover", (e) => { e.preventDefault(); });
   panel.addEventListener("drop", async (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -1901,7 +1944,7 @@ async function dropToAtts(dt, arr, render) {
   // text field, the Dual Mind panel, or an open modal)
   document.addEventListener("paste", (e) => {
     const t = e.target;
-    if (t && ((t.closest && (t.closest("#chatPanel") || t.closest(".modal") || t.closest("#refDock"))) || /^(INPUT|TEXTAREA)$/.test(t.tagName || ""))) return;
+    if (t && ((t.closest && (t.closest("#chatView") || t.closest(".modal") || t.closest("#refDock"))) || /^(INPUT|TEXTAREA)$/.test(t.tagName || ""))) return;
     const its = [...((e.clipboardData && e.clipboardData.items) || [])].filter((it) => it.type && it.type.startsWith("image/"));
     if (its.length) { e.preventDefault(); cvAddFiles(its.map((it) => it.getAsFile()).filter(Boolean)); }
   });
