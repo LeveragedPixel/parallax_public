@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 60; // v60: image generation is OpenAI-only — Venice/ArtCraft are video-only (they were eating Seedance credits)
+const BUILD = 61; // v61: video model picker lists the Seedance workflow variants (Venice + ArtCraft), never a lone "default"
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1120,7 +1120,9 @@ function cvAgentOptions(sel, current) {
 }
 async function cvRenderModels(prov, type) {
   const ck = prov + ":" + type;
-  if (!genModelsCache[ck]) {
+  // Only cache a NON-empty answer: a transient failure used to be cached for the whole
+  // session, which is what pinned the video picker to a lone "default".
+  if (!genModelsCache[ck] || !genModelsCache[ck].length) {
     try { const d = await api(`/api/models?provider=${prov}&type=${type}`); genModelsCache[ck] = d.models || []; } catch { genModelsCache[ck] = []; }
   }
   return genModelsCache[ck];
@@ -1228,7 +1230,7 @@ function cvAddNodeEl(n) {
       <textarea class="cvtext" placeholder="${out === "video" ? "describe the motion / scene…  e.g. 'slow push-in, she turns and smiles, rain starts'" : "recreate / edit / change…  e.g. 'make it golden hour' or 'same character, side profile'"}">${esc(n.text || "")}</textarea>
       <div class="cvctl">
         ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<span class="cvfixed" title="image generation runs on OpenAI GPT Image only — Venice and ArtCraft credits are reserved for video">OpenAI · GPT Image</span>`}
-        <select class="cvrmodel" title="${out === "video" ? "video model" : "image model"}"><option value="">${out === "video" ? "video model: default" : "gpt-image-2 (default)"}</option></select>
+        <select class="cvrmodel" title="${out === "video" ? "Seedance workflow — Auto picks the right variant from what you connect (image ⇒ reference/first-frame, none ⇒ text-to-video)" : "image model"}"><option value="">${out === "video" ? "Auto — match my refs" : "gpt-image-2 (default)"}</option></select>
       </div>
       <div class="cvrow">${out === "image"
         ? `<select class="cvcount" title="how many variations">${["1", "2", "3", "4"].map((c) => `<option value="${c}" ${c === (n.count || "1") ? "selected" : ""}>×${c}</option>`).join("")}</select>

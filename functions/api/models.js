@@ -5,7 +5,7 @@
 
 import { verifyToken } from "./_verify.js";
 import { tokenFrom, userFromToken } from "./_session.js";
-import { getKeys, veniceModels, artcraftModels } from "./_providers.js";
+import { getKeys, veniceModels, artcraftModels, VENICE_SEEDANCE_VIDEO } from "./_providers.js";
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -30,8 +30,11 @@ export async function onRequestGet(context) {
     if (provider === "venice") {
       // v60: Venice serves VIDEO models only — image generation is OpenAI-only.
       if (type === "image") return json({ ok: true, provider, type, models: [], note: "image generation runs on OpenAI only" });
-      if (!keys.venice) return json({ ok: true, provider, models: [], note: "Venice not connected" });
-      return json({ ok: true, provider, type, models: await veniceModels(keys.venice, type) });
+      // The Seedance catalog is a constant, so offer it even with no key / a failed
+      // probe — an unconfigured provider should never collapse the picker to "default".
+      if (!keys.venice) return json({ ok: true, provider, type, models: VENICE_SEEDANCE_VIDEO, note: "Venice not connected — add your key in Connections to render" });
+      try { return json({ ok: true, provider, type, models: await veniceModels(keys.venice, type) }); }
+      catch { return json({ ok: true, provider, type, models: VENICE_SEEDANCE_VIDEO, note: "couldn't reach Venice's model list — showing the Seedance catalog" }); }
     }
     if (provider === "artcraft") return json({ ok: true, provider, type, models: type === "image" ? [] : artcraftModels(type), note: type === "image" ? "image generation runs on OpenAI only" : undefined });
     return json({ error: "unknown provider" }, 400);

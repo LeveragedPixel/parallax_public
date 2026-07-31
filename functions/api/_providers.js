@@ -60,7 +60,7 @@ export async function openaiImage(key, { model, prompt, aspect, quality, n }) {
 // Seedance 2.0 video variants (official IDs from docs.venice.ai/guides/media/seedance-2-0).
 // Venice's /models?type=video does not always enumerate these, so we always merge them in —
 // labelled by workflow so the operator knows which one uses an attached image.
-const VENICE_SEEDANCE_VIDEO = [
+export const VENICE_SEEDANCE_VIDEO = [
   { id: "seedance-2-0-reference-to-video", label: "Seedance 2.0 · reference→video (uses image)", type: "video" },
   { id: "seedance-2-0-image-to-video", label: "Seedance 2.0 · image→video (first frame)", type: "video" },
   { id: "seedance-2-0-text-to-video", label: "Seedance 2.0 · text→video", type: "video" },
@@ -69,16 +69,24 @@ const VENICE_SEEDANCE_VIDEO = [
   { id: "seedance-2-0-fast-text-to-video", label: "Seedance 2.0 Fast · text→video", type: "video" },
 ];
 export async function veniceModels(key, type) {
+  // v61: VIDEO on Venice = Seedance only, and the catalog is authoritative. Venice's
+  // /models does not reliably enumerate the Seedance workflow variants, and if that
+  // call fails the dropdown used to collapse to a lone "default" — so the constants
+  // always win and a live failure never empties the list.
+  if (type === "video") {
+    let live = [];
+    try {
+      const r = await fetch(`${VENICE}/models?type=video`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10000) });
+      if (r.ok) { const d = await r.json(); live = (d.data || []).map((m) => ({ id: m.id, label: (m.model_spec && m.model_spec.name) || m.id, type: "video" })); }
+    } catch { /* catalog still stands */ }
+    const known = new Set(VENICE_SEEDANCE_VIDEO.map((m) => m.id));
+    const extraSeedance = live.filter((m) => /seedance/i.test(m.id) && !known.has(m.id));
+    return [...VENICE_SEEDANCE_VIDEO, ...extraSeedance];
+  }
   const res = await fetch(`${VENICE}/models?type=${encodeURIComponent(type)}`, { headers: { Authorization: `Bearer ${key}` } });
   if (!res.ok) throw new Error(`Venice models ${res.status}`);
   const d = await res.json();
-  let models = (d.data || []).map((m) => ({ id: m.id, label: (m.model_spec && m.model_spec.name) || m.id, type: m.type }));
-  if (type === "video") {
-    const have = new Set(models.map((m) => m.id));
-    const inject = VENICE_SEEDANCE_VIDEO.filter((s) => !have.has(s.id));
-    models = [...inject, ...models]; // Seedance first so it's easy to find
-  }
-  return models;
+  return (d.data || []).map((m) => ({ id: m.id, label: (m.model_spec && m.model_spec.name) || m.id, type: m.type }));
 }
 // Venice publishes real remaining balances on its key endpoint (USD + VCU + DIEM).
 // Fall back to the balance header on /models if that endpoint ever moves.
@@ -267,7 +275,9 @@ export const ARTCRAFT_MODELS = {
   ],
 };
 export function artcraftModels(type) {
-  return ARTCRAFT_MODELS[type] || [];
+  const all = ARTCRAFT_MODELS[type] || [];
+  // v61: video is Seedance-only here too — Kling / Sora / Veo are hidden by request.
+  return type === "video" ? all.filter((m) => /seedance/i.test(m.id)) : all;
 }
 
 // Kick off a generation. `kind` = "image"|"video"; `modelId` = a path suffix above.
