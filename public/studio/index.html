@@ -527,17 +527,42 @@ body[data-screen="board"] #chatView{display:none}
 #projList{display:flex;flex-direction:column}
 
 /* ---- v54: reference drop-spot on video generator nodes ---- */
-.cvrefzone{display:flex;align-items:center;gap:6px;margin:6px 8px 0;padding:7px 9px;border:1.5px dashed var(--line2);border-radius:8px;font-size:10.5px;color:var(--faint);cursor:default;transition:border-color .15s,background .15s,color .15s}
-.cvrefzone .ic{font-size:12px;opacity:.9}
-.cvrefzone .lb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* v63: image refs and MUSIC are separate, labelled sections on video nodes */
+.cvrefs{margin:8px 8px 2px;display:flex;flex-direction:column;gap:8px}
+.cvref-sec{border:1px solid var(--line);border-radius:9px;padding:6px 7px;background:color-mix(in srgb,var(--panel2) 60%,transparent)}
+.cvref-h{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.cvref-h .t{font-size:9.5px;letter-spacing:.1em;font-weight:800;color:var(--dim);text-transform:uppercase}
+.cvref-h .lim{margin-left:auto;font-size:9px;color:var(--faint)}
+.cvrefzone{display:block;padding:7px 9px;border:1.5px dashed var(--line2);border-radius:7px;font-size:10.5px;
+  color:var(--faint);cursor:default;text-align:center;transition:border-color .15s,background .15s,color .15s}
 .cvrefzone u{cursor:pointer;color:var(--dim)}
 .cvrefzone u:hover{color:var(--pri-hi)}
 .cvrefzone.over{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 10%,transparent);color:var(--txt)}
-.cvrefchips{display:flex;flex-wrap:wrap;gap:5px;margin:5px 8px 2px}
+.cvrefchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .cvrefchips:empty{display:none}
+.cvref-note{font-size:9.5px;line-height:1.4;margin-top:6px}
+.cvref-note:empty{display:none}
+.cvref-note.ok{color:var(--sec)}
+.cvref-note.warn{color:var(--red)}
+.cvbeat{font-size:8.5px;letter-spacing:.1em;font-weight:700;color:var(--sec);
+  border:1px solid color-mix(in srgb,var(--sec) 40%,transparent);border-radius:999px;padding:1px 6px;white-space:nowrap}
+/* the song-window picker */
+.cvslicer{margin-top:7px;border:1px solid var(--line2);border-radius:7px;padding:7px;background:var(--panel)}
+.cvslicer.hide{display:none}
+.cvslicer .sl-h{font-size:10px;color:var(--txt);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cvslicer .dim{color:var(--faint)}
+.cvslicer .sl-range{width:100%;margin:0 0 6px;padding:0;accent-color:var(--sec)}
+.cvslicer .sl-row{display:flex;align-items:center;gap:6px}
+.cvslicer .sl-win{font-size:10.5px;color:var(--sec);font-weight:700;font-variant-numeric:tabular-nums}
+.cvslicer button{font-size:10px;border-radius:6px;padding:3px 7px;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);cursor:pointer}
+.cvslicer button:hover{color:var(--txt);border-color:var(--line2)}
+.cvslicer .sl-use{margin-left:auto;background:linear-gradient(180deg,var(--pri-hi),var(--pri));color:var(--btn-ink,#fff);border:0;font-weight:700}
+.cvslicer .sl-use:disabled{opacity:.6}
 .cvrefchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line2);border-radius:999px;padding:2px 7px 2px 3px;font-size:10px;color:var(--dim);background:var(--panel2);max-width:100%}
 .cvrefchip img{width:22px;height:22px;object-fit:cover;border-radius:999px;display:block}
 .cvrefchip.aud{padding-left:7px}
+.cvrefchip .dur{color:var(--faint);font-variant-numeric:tabular-nums}
+.cvrefchip.aud .nm{max-width:130px}
 .cvrefchip .nm{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cvrefchip.lost{opacity:.55;border-style:dashed}
 .cvrefchip .x{background:transparent;color:var(--faint);padding:0 2px;font-size:10px;cursor:pointer}
@@ -702,10 +727,13 @@ body[data-screen="board"] #chatView{display:none}
 <div id="projModal" class="modal hide"><div class="modal-card sm"><div class="modal-h">Projects <span class="cnt" id="projCount" style="margin-left:6px">0</span><div class="sp"></div><button class="x" id="projClose">✕</button></div><div class="modal-b">
   <div class="hintline" style="padding:0 0 8px">click a chat project to open it in the Dual Mind panel · ✎ rename · 🗑 delete</div>
   <div id="projList"></div>
-  <div style="margin-top:12px"><button class="btn-wide" id="newProjBtn">+ New project</button></div>
+  <div style="margin-top:12px;display:flex;gap:8px">
+    <button class="btn-wide" id="newProjBtn" style="margin:0;width:auto;flex:1">+ New project</button>
+    <button class="btn-wide" id="newMvBtn" style="margin:0;width:auto;flex:1;border-style:solid;border-color:color-mix(in srgb,var(--sec) 45%,var(--line));color:var(--sec)" title="sets up a project, a planning thread and a board that walks you through song → key visual → animate to the music">🎬 New music video</button>
+  </div>
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=62"></script>
+<script src="app.js?v=63"></script>
 </body>
 </html>

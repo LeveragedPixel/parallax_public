@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 62; // v62: Continue clip — chain a shot off its own final frame to build one long, fluid video
+const BUILD = 63; // v63: music video pipeline — dedicated 🎵 audio section with in-browser song slicing, + Music Video project template
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -255,11 +255,12 @@ function logout() { token = ""; localStorage.removeItem(TOKEN_KEY); colConvos = 
 async function showApp() {
   hide("login"); show("app"); $("operator").textContent = "operator: " + userFromToken(token);
   applyLaneToggles();
+  renderSpace();                     // kick the board load off immediately: anything dropped
+                                     // during startup must have a promise to wait on
   await Promise.all([loadProjects(), loadModels()]);
   await loadThreads();
   if (!threadById(chatThread)) chatThread = (threads[0] && threads[0].id) || "__raw";
   await setThread(chatThread);
-  renderSpace();
   try { if (localStorage.getItem("plx-threadbar") === "0") $("chatView").classList.add("tb-collapsed"); } catch {}
   setScreen(localStorage.getItem("plx-screen") === "chat" ? "chat" : "board");
   loadCredits(); loadStatus(); loadBalances(); loadSpend();
@@ -347,6 +348,64 @@ function renderThreads() {
     }
   }
 }
+/* ---- Music Video template (v63) -------------------------------------------
+   One click lays out the whole pipeline: a project carrying the song/video/director
+   skills, a thread to plan in, and a board whose first three nodes ARE the steps —
+   so the flow is visible instead of documented. -------------------------------- */
+const MV_INSTRUCTIONS = `This project makes a MUSIC VIDEO: one song, one key visual, and a chain of short
+Seedance clips cut to it.
+
+Honour these throughout:
+- Clips are short (5-15s). Work out shot length from the song's BPM so cuts land on bars:
+  one bar in 4/4 = 240 / BPM seconds. Say the bar math when you recommend a length.
+- A music reference is capped at 15 SECONDS. Never suggest feeding a whole song into one
+  generation. Clip 1 carries the audio reference to establish the rhythm; later clips chain
+  from the previous clip's final frame WITHOUT audio, so they stay seamless.
+- Seedance generates its own audio; the reference steers timing and feel. The real track is
+  laid over the finished clips at the end, outside this app.
+- Carry continuity forward in every shot: character, wardrobe, lighting, grade, lens,
+  location, weather, and any state established earlier. Describe only the new action.`;
+
+async function newMusicVideo() {
+  const name = (prompt("Name this music video:", "Untitled music video") || "").trim();
+  if (!name) return;
+  toast("setting up…");
+  try {
+    // 1. the project, carrying the skills that shape every thread and render inside it
+    const want = ["music-video-director", "suno-prompter", "seedance-prompter-v3"];
+    if (!_skillsMeta) { try { const d = await api("/api/skills"); _skillsMeta = d.skills || []; } catch { _skillsMeta = []; } }
+    const have = want.filter((id) => (_skillsMeta || []).some((sk) => sk.id === id));
+    const pr = await api("/api/projects", { name, type: "chat", instructions: MV_INSTRUCTIONS, attachedSkills: have });
+    if (!pr.ok) { toast(pr.error || "couldn't create the project"); return; }
+    const pid = (pr.project && pr.project.id) || pr.id;
+    await loadProjects();
+
+    // 2. a thread to plan in
+    const th = await api("/api/threads", { title: name + " — plan", projectId: pid });
+    threads = th.threads || threads;
+
+    // 3. a board whose nodes ARE the instructions
+    const bd = await api("/api/boards", { name, projectId: pid, board: { nodes: [], edges: [], pan: { x: 60, y: 40 }, zoom: 1, updatedAt: Date.now() } });
+    cvBoards = bd.boards || cvBoards;
+    await cvOpenBoard(bd.id);
+
+    const step1 = { id: cvId(), kind: "text", x: 60, y: 60, w: 360, skills: have.slice(),
+      text: "STEP 1 — THE SONG\nDescribe the track you want (genre, mood, BPM, length) and press Ask. You'll get a Suno prompt back. Make the song in Suno, then bring the mp3 back here." };
+    const step2 = { id: cvId(), kind: "prompt", out: "image", x: 470, y: 60, w: 320, aspect: "16:9", iq: "medium", parentId: step1.id, skills: have.slice(),
+      text: "STEP 2 — THE KEY VISUAL: describe your character / world here, then Generate." };
+    const step3 = { id: cvId(), kind: "text", x: 870, y: 60, w: 360, skills: [],
+      text: "STEP 3 — ANIMATE IT TO THE MUSIC\nHover your generated image, drag the ＋ handle off it and pick Video generator.\nOn that node, drop your song into the 🎵 MUSIC box — if it's longer than 15s you can slide to pick which part to use.\nGenerate, then hover the finished clip and press ⏭ continue to chain the next shot (leave music off those so they stay seamless)." };
+    cv.nodes.push(step1, step2, step3);
+    cv.edges.push({ from: step1.id, to: step2.id });
+    cvSave(); cvRebuildAll();
+
+    hide("projModal");
+    setScreen("board");
+    await setThread(th.thread.id);
+    toast("music video set up — follow the three steps on the board");
+  } catch (e) { toast("setup failed: " + String(e.message || e).slice(0, 120)); }
+}
+
 async function newThread(projectId) {
   try {
     const d = await api("/api/threads", { title: "New chat", projectId: projectId || null });
@@ -1277,7 +1336,7 @@ function cvAddNodeEl(n) {
     const vprov = n.vprov || "venice";
     const iprov = "openai";   // v60: images are OpenAI-only (Venice/ArtCraft = video credits)
     if (n.iprov && n.iprov !== "openai") { n.iprov = "openai"; cvSave(); }   // heal boards saved before v60
-    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span>` : `<span class="cvapi oa" title="image generation runs on OpenAI only">OPENAI API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
+    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span><span class="cvbeat hide" title="a music reference is attached — Seedance will time this clip to it">🎵 beat-synced</span>` : `<span class="cvapi oa" title="image generation runs on OpenAI only">OPENAI API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
       <textarea class="cvtext" placeholder="${out === "video" ? "describe the motion / scene…  e.g. 'slow push-in, she turns and smiles, rain starts'" : "recreate / edit / change…  e.g. 'make it golden hour' or 'same character, side profile'"}">${esc(n.text || "")}</textarea>
       <div class="cvctl">
         ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<span class="cvfixed" title="image generation runs on OpenAI GPT Image only — Venice and ArtCraft credits are reserved for video">OpenAI · GPT Image</span>`}
@@ -1292,7 +1351,20 @@ function cvAddNodeEl(n) {
            <select class="cvaspect" title="aspect ratio (ignored when a source image/clip sets it)">${["16:9", "9:16", "1:1"].map((a) => `<option ${a === (n.aspect || "16:9") ? "selected" : ""}>${a}</option>`).join("")}</select>`}
         <button class="btn-solid cvgen">Generate</button><span class="cvstat"></span>
       </div>
-      ${out === "video" ? `<div class="cvrefzone" title="Seedance reference→video (Venice): up to 9 images + 3 audio clips (2–15s each, ≤15s of audio total, wav/mp3). Audio needs at least one image or clip alongside it."><span class="ic">🖼</span><span class="ic">🎵</span><span class="lb">drop image / audio refs — or <u class="cvrefpick">browse</u></span></div><div class="cvrefchips"></div>` : ""}`;
+      ${out === "video" ? `<div class="cvrefs">
+        <div class="cvref-sec">
+          <div class="cvref-h"><span class="t">🖼 Image refs</span><span class="lim">up to 9</span></div>
+          <div class="cvrefzone" data-kind="image">drop images — or <u class="cvrefpick" data-kind="image">browse</u></div>
+          <div class="cvrefchips img"></div>
+        </div>
+        <div class="cvref-sec">
+          <div class="cvref-h"><span class="t">🎵 Music</span><span class="lim">wav / mp3</span></div>
+          <div class="cvrefzone" data-kind="audio">drop your track — or <u class="cvrefpick" data-kind="audio">browse</u></div>
+          <div class="cvslicer hide"></div>
+          <div class="cvrefchips aud"></div>
+          <div class="cvref-note"></div>
+        </div>
+      </div>` : ""}`;
     const ta = el.querySelector(".cvtext");
     ta.oninput = () => { n.text = ta.value; clearTimeout(el._t); el._t = setTimeout(cvSave, 500); };
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cvGenerate(n.id); } };
@@ -1333,15 +1405,46 @@ function cvAddNodeEl(n) {
    (wav/mp3, 2–15s each, ≤15s combined — Venice's Seedance limits) ride the
    generation as reference_image_urls / reference_audio_urls. */
 function cvRefs(n) { if (!n.refs) n.refs = { imgs: [], aud: [] }; n.refs.imgs = n.refs.imgs || []; n.refs.aud = n.refs.aud || []; return n.refs; }
-function audioDuration(dataUrl) {
-  return new Promise((res) => {
-    const a = new Audio(); a.preload = "metadata";
-    a.onloadedmetadata = () => res(isFinite(a.duration) && a.duration > 0 ? a.duration : 0);
-    a.onerror = () => res(0);
-    a.src = dataUrl;
-    setTimeout(() => res(0), 8000);
-  });
+
+/* ---- music references (v63) --------------------------------------------------
+   Venice caps a reference to 15s of audio, so a whole song can't be sent. Rather
+   than making the operator trim a snippet in another app, the full track is held
+   in memory (never saved to the board) and a window of it is cut here, in the
+   browser: decode → downmix to mono → resample to 22.05k → slice → WAV. Small
+   enough to send inline, plenty for beat/timing reference. ------------------- */
+const cvTracks = {};          // nodeId -> { name, dur, buf(ArrayBuffer) } — deliberately NOT persisted
+const MUSIC_WINDOW = 15;      // Venice's hard cap, in seconds
+const fmtClock = (t) => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); };
+
+function wavFromBuffer(ab) {
+  const ch = ab.getChannelData(0), sr = ab.sampleRate, n = ch.length;
+  const out = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o, v) => { for (let i = 0; i < v.length; i++) out.setUint8(o + i, v.charCodeAt(i)); };
+  str(0, "RIFF"); out.setUint32(4, 36 + n * 2, true); str(8, "WAVE");
+  str(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+  out.setUint32(24, sr, true); out.setUint32(28, sr * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  str(36, "data"); out.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const v = Math.max(-1, Math.min(1, ch[i])); out.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true); }
+  let bin = ""; const u8 = new Uint8Array(out.buffer);
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return "data:audio/wav;base64," + btoa(bin);
 }
+async function decodeTrack(arrayBuffer) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  try { return await ctx.decodeAudioData(arrayBuffer.slice(0)); } finally { try { ctx.close(); } catch {} }
+}
+// Cut [start, start+len) out of the decoded track as a small mono WAV.
+async function sliceTrackToWav(decoded, start, len) {
+  const SR = 22050;
+  const frames = Math.max(1, Math.floor(len * SR));
+  const off = new OfflineAudioContext(1, frames, SR);
+  const src = off.createBufferSource(); src.buffer = decoded;
+  src.connect(off.destination);
+  src.start(0, Math.max(0, start), len);
+  return wavFromBuffer(await off.startRendering());
+}
+
 async function cvAddRefFiles(n, files) {
   const refs = cvRefs(n);
   let added = 0;
@@ -1356,67 +1459,160 @@ async function cvAddRefFiles(n, files) {
         api("/api/gallery", { dataUrl: a.dataUrl, name: "video ref" }).then((d) => { if (d && d.entry && d.entry.id) { r.galleryId = d.entry.id; cvSave(); } }).catch(() => {});
       } catch { toast("couldn't read " + (f.name || "image")); }
     } else if (f.type.startsWith("audio/") || /\.(wav|mp3)$/i.test(f.name || "")) {
-      if (!/wav|mpeg|mp3/i.test(f.type)) { toast((f.name || "audio") + ": Venice takes .wav or .mp3 only"); continue; }
-      if (refs.aud.length >= 3) { toast("max 3 audio refs"); continue; }
-      if (f.size > 3500000) { toast((f.name || "audio") + ": too big to send inline (~" + (f.size / 1e6).toFixed(1) + " MB) — trim it to ≤15s first"); continue; }
-      try {
-        const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
-        const dur = await audioDuration(dataUrl);
-        if (dur && (dur < 2 || dur > 15)) { toast((f.name || "audio") + " is " + Math.round(dur) + "s — Venice takes 2–15s clips. Trim it."); continue; }
-        const total = refs.aud.reduce((t, a) => t + (a.dur || 0), 0) + (dur || 0);
-        if (total > 15) { toast("audio refs total " + Math.round(total) + "s — Venice caps combined audio at 15s"); continue; }
-        refs.aud.push({ dataUrl, name: (f.name || "audio").slice(0, 40), dur: dur ? Math.round(dur * 10) / 10 : 0 }); added++;
-      } catch { toast("couldn't read " + (f.name || "audio")); }
+      if (!/wav|mpeg|mp3/i.test(f.type) && !/\.(wav|mp3)$/i.test(f.name || "")) { toast((f.name || "audio") + ": Venice takes .wav or .mp3 only"); continue; }
+      if (refs.aud.length >= 3) { toast("max 3 music refs on one clip"); continue; }
+      if (f.size > 40000000) { toast((f.name || "track") + " is over 40MB — export a smaller file"); continue; }
+      try { await cvLoadTrack(n, f); added++; }
+      catch { toast("couldn't read " + (f.name || "track")); }
     }
   }
   if (added) { cvSave(); const el = cvEls[n.id]; if (el) cvRenderRefs(n, el); }
   return added;
 }
-function cvRenderRefs(n, el) {
-  const box = el.querySelector(".cvrefchips"); if (!box) return;
-  const refs = cvRefs(n); box.innerHTML = "";
-  refs.imgs.forEach((r, i) => {
-    const c = document.createElement("span"); c.className = "cvrefchip img";
-    c.innerHTML = (r.dataUrl ? `<img src="${r.dataUrl}">` : "🖼") + `<button class="x" title="remove">✕</button>`;
-    c.title = "image reference " + (i + 1);
-    c.querySelector(".x").onclick = () => { refs.imgs.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
-    box.appendChild(c);
-  });
-  refs.aud.forEach((r, i) => {
-    const lost = !r.dataUrl;
-    const c = document.createElement("span"); c.className = "cvrefchip aud" + (lost ? " lost" : "");
-    c.innerHTML = `🎵 <span class="nm">${esc(r.name || "audio")}</span>${r.dur ? ` · ${r.dur}s` : ""}${lost ? " — re-drop" : ""}<button class="x" title="remove">✕</button>`;
-    c.title = lost ? "audio doesn't survive a reload — drop the file again" : "audio reference (steers Seedance's music / beat / lip-sync)";
-    c.querySelector(".x").onclick = () => { refs.aud.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
-    box.appendChild(c);
+
+// A dropped song becomes the node's working track; short files attach as-is.
+async function cvLoadTrack(n, file) {
+  const el = cvEls[n.id];
+  const zone = el && el.querySelector('.cvrefzone[data-kind="audio"]');
+  if (zone) zone.textContent = "reading " + (file.name || "track") + "…";
+  const buf = await file.arrayBuffer();
+  const decoded = await decodeTrack(buf);
+  const dur = decoded.duration || 0;
+  cvTracks[n.id] = { name: (file.name || "track").slice(0, 48), dur, decoded };
+  if (dur <= MUSIC_WINDOW + 0.25) {
+    // already short enough: attach the whole thing
+    const wav = await sliceTrackToWav(decoded, 0, Math.min(dur, MUSIC_WINDOW));
+    cvRefs(n).aud.push({ dataUrl: wav, name: cvTracks[n.id].name, dur: Math.round(dur * 10) / 10, from: 0 });
+    delete cvTracks[n.id];
+  } else {
+    n.trackStart = 0;   // long track: the operator picks the window
+  }
+  cvSave(); if (el) cvRenderRefs(n, el);
+}
+
+// The window picker: shown only while a long track is loaded on this node.
+function cvRenderSlicer(n, el) {
+  const box = el.querySelector(".cvslicer"); if (!box) return;
+  const t = cvTracks[n.id];
+  if (!t) { box.classList.add("hide"); box.innerHTML = ""; return; }
+  const maxStart = Math.max(0, t.dur - MUSIC_WINDOW);
+  const start = Math.min(Math.max(0, n.trackStart || 0), maxStart);
+  box.classList.remove("hide");
+  box.innerHTML = `<div class="sl-h">🎵 ${esc(t.name)} <span class="dim">${fmtClock(t.dur)}</span></div>
+    <input class="sl-range" type="range" min="0" max="${Math.floor(maxStart)}" step="1" value="${Math.floor(start)}">
+    <div class="sl-row"><span class="sl-win">${fmtClock(start)} → ${fmtClock(start + MUSIC_WINDOW)}</span>
+      <button class="sl-play" title="preview this window">▶</button>
+      <button class="sl-use btn-solid">✂ use this ${MUSIC_WINDOW}s</button>
+      <button class="sl-drop" title="discard this track">✕</button></div>`;
+  const range = box.querySelector(".sl-range"), win = box.querySelector(".sl-win");
+  range.oninput = () => { n.trackStart = Number(range.value); win.textContent = fmtClock(n.trackStart) + " → " + fmtClock(n.trackStart + MUSIC_WINDOW); };
+  box.querySelector(".sl-play").onclick = async (e) => {
+    e.stopPropagation();
+    try {
+      const wav = await sliceTrackToWav(t.decoded, n.trackStart || 0, MUSIC_WINDOW);
+      const a = new Audio(wav); a.play().catch(() => toast("preview blocked by the browser"));
+    } catch { toast("couldn't preview that window"); }
+  };
+  box.querySelector(".sl-use").onclick = async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget; btn.disabled = true; btn.textContent = "cutting…";
+    try {
+      const wav = await sliceTrackToWav(t.decoded, n.trackStart || 0, MUSIC_WINDOW);
+      cvRefs(n).aud.push({ dataUrl: wav, name: t.name + " " + fmtClock(n.trackStart || 0), dur: MUSIC_WINDOW, from: n.trackStart || 0 });
+      delete cvTracks[n.id]; cvSave(); cvRenderRefs(n, el);
+      toast("music window attached — Seedance will cut to it");
+    } catch { toast("couldn't cut that window"); btn.disabled = false; btn.textContent = "✂ use this " + MUSIC_WINDOW + "s"; }
+  };
+  box.querySelector(".sl-drop").onclick = (e) => { e.stopPropagation(); delete cvTracks[n.id]; cvRenderRefs(n, el); };
+}
+
+function cvBindPicks(n, el) {
+  el.querySelectorAll(".cvrefpick").forEach((pick) => {
+    pick.onclick = (e) => {
+      e.stopPropagation();
+      const kind = pick.dataset.kind;
+      const inp = document.createElement("input"); inp.type = "file"; inp.multiple = kind === "image";
+      inp.accept = kind === "image" ? "image/*" : "audio/wav,audio/mpeg,.wav,.mp3";
+      inp.onchange = () => cvAddRefFiles(n, inp.files);
+      inp.click();
+    };
   });
 }
+function cvRenderRefs(n, el) {
+  const refs = cvRefs(n);
+  // restore the drop label (cvLoadTrack borrows it for "reading …" progress)
+  const az = el.querySelector('.cvrefzone[data-kind="audio"]');
+  if (az && !cvTracks[n.id]) az.innerHTML = 'drop your track — or <u class="cvrefpick" data-kind="audio">browse</u>';
+  const imgBox = el.querySelector(".cvrefchips.img"), audBox = el.querySelector(".cvrefchips.aud");
+  if (imgBox) {
+    imgBox.innerHTML = "";
+    refs.imgs.forEach((r, i) => {
+      const c = document.createElement("span"); c.className = "cvrefchip img";
+      c.innerHTML = (r.dataUrl ? `<img src="${r.dataUrl}">` : "🖼") + `<button class="x" title="remove">✕</button>`;
+      c.title = "image reference " + (i + 1);
+      c.querySelector(".x").onclick = (e) => { e.stopPropagation(); refs.imgs.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
+      imgBox.appendChild(c);
+    });
+  }
+  if (audBox) {
+    audBox.innerHTML = "";
+    refs.aud.forEach((r, i) => {
+      const lost = !r.dataUrl;
+      const c = document.createElement("span"); c.className = "cvrefchip aud" + (lost ? " lost" : "");
+      c.innerHTML = `🎵 <span class="nm">${esc(r.name || "track")}</span><span class="dur">${r.dur ? r.dur + "s" : ""}</span>${lost ? "<span class='dim'>— re-drop</span>" : ""}`;
+      c.title = lost ? "music doesn't survive a reload — drop the track again" : "music reference — steers Seedance's timing, beat and cuts";
+      if (!lost) {
+        const play = document.createElement("button"); play.className = "x"; play.textContent = "▶"; play.title = "preview";
+        play.onclick = (e) => { e.stopPropagation(); const a = new Audio(r.dataUrl); a.play().catch(() => {}); };
+        c.appendChild(play);
+      }
+      const x = document.createElement("button"); x.className = "x"; x.textContent = "✕"; x.title = "remove";
+      x.onclick = (e) => { e.stopPropagation(); refs.aud.splice(i, 1); cvSave(); cvRenderRefs(n, el); };
+      c.appendChild(x); audBox.appendChild(c);
+    });
+  }
+  cvRenderSlicer(n, el);
+  cvBindPicks(n, el);
+
+  // say what will actually happen, right where the decision is made
+  const note = el.querySelector(".cvref-note");
+  const beat = el.querySelector(".cvbeat");
+  const hasAud = refs.aud.length > 0;
+  if (beat) beat.classList.toggle("hide", !hasAud);
+  if (note) {
+    let msg = "", cls = "cvref-note";
+    if (hasAud && !refs.imgs.length && !cvNode(n.parentId)) { msg = "⚠ music can't go alone — connect an image or drop one above"; cls += " warn"; }
+    else if (hasAud && n.contFrom) { msg = "⚠ music switches this to reference-mode, so it won't start exactly on the previous frame. Remove it to keep the seam."; cls += " warn"; }
+    else if (hasAud) { msg = "Seedance will time this clip to your track"; cls += " ok"; }
+    note.className = cls; note.textContent = msg;
+  }
+}
+
 function cvWireRefZone(n, el) {
-  const zone = el.querySelector(".cvrefzone"); if (!zone) return;
+  const zones = [...el.querySelectorAll(".cvrefzone")];
+  if (!zones.length) return;
   cvRenderRefs(n, el);
-  zone.querySelector(".cvrefpick").onclick = (e) => {
-    e.stopPropagation();
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*,audio/wav,audio/mpeg,.wav,.mp3"; inp.multiple = true;
-    inp.onchange = () => cvAddRefFiles(n, inp.files);
-    inp.click();
-  };
   ["dragenter", "dragover"].forEach((ev) => el.addEventListener(ev, (e) => {
-    if ([...(e.dataTransfer ? e.dataTransfer.types : [])].some((t) => t === "Files" || t === "application/x-plx-media")) { e.preventDefault(); e.stopPropagation(); zone.classList.add("over"); }
+    if ([...(e.dataTransfer ? e.dataTransfer.types : [])].some((t) => t === "Files" || t === "application/x-plx-media")) {
+      e.preventDefault(); e.stopPropagation();
+      const z = e.target.closest && e.target.closest(".cvrefzone");
+      zones.forEach((q) => q.classList.toggle("over", !z || q === z));
+    }
   }));
-  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) zone.classList.remove("over"); });
+  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) zones.forEach((q) => q.classList.remove("over")); });
   el.addEventListener("drop", async (e) => {
-    e.preventDefault(); e.stopPropagation(); zone.classList.remove("over");
+    e.preventDefault(); e.stopPropagation(); zones.forEach((q) => q.classList.remove("over"));
     const plx = e.dataTransfer.getData("application/x-plx-media");
     if (plx) {
       try {
         const item = JSON.parse(plx);
         if (item.type === "video") { toast("clips connect as a source — drag the board node's ＋ handle instead"); return; }
         const att = await srcToImgAtt(item.src);
-        if (att) { const refs = cvRefs(n); if (refs.imgs.length >= 9) { toast("max 9 image refs"); return; } const r = { dataUrl: att.dataUrl, galleryId: item.id || null }; refs.imgs.push(r); cvSave(); cvRenderRefs(n, el); toast("image ref added"); return; }
+        if (att) { const refs = cvRefs(n); if (refs.imgs.length >= 9) { toast("max 9 image refs"); return; } refs.imgs.push({ dataUrl: att.dataUrl, galleryId: item.id || null }); cvSave(); cvRenderRefs(n, el); toast("image ref added"); return; }
       } catch {}
     }
     const got = await cvAddRefFiles(n, (e.dataTransfer && e.dataTransfer.files) || []);
-    if (!got) toast("drop an image, a .wav, or an .mp3 here");
+    if (!got) toast("drop an image, or a .wav / .mp3 track");
   });
 }
 /* ---- Continue clip: build ONE long video out of short generations ----
@@ -1994,7 +2190,10 @@ function renderSpace() {
 }
 // Anything that ADDS to the board must wait for the account board to finish opening —
 // otherwise the load replaces cv and wipes the just-added node (race on first entry).
-async function cvWhenReady() { if (cvBoardsPromise) { try { await cvBoardsPromise; } catch {} } }
+async function cvWhenReady() {
+  for (let i = 0; i < 40 && !cvBoardsPromise && token; i++) await new Promise((r) => setTimeout(r, 50));
+  if (cvBoardsPromise) { try { await cvBoardsPromise; } catch {} }
+}
 
 /* wire */
 // Single self-contained file now (JS inlined into index.html), so one version marker.
@@ -2018,6 +2217,7 @@ $("thToggle").onclick = () => {
 };
 $("projBtn").onclick = () => { renderProjects(); show("projModal"); };
 $("projClose").onclick = () => hide("projModal");
+$("newMvBtn").onclick = newMusicVideo;
 $("togClaude").onclick = () => toggleLane("claude");
 $("togGpt").onclick = () => toggleLane("gpt");
 $("newProjBtn").onclick = () => { hide("projModal"); editingId = null; $("npName").value = ""; $("npInstr").value = ""; $("npType").value = "chat"; $("npTitle").textContent = "NEW PROJECT"; fillNpSkills([]); show("npModal"); };
