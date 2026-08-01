@@ -355,6 +355,13 @@ body[data-theme="terminal"]{--void:#050805;--panel:#0A0F0A;--panel2:#0D140D;--li
 .cvchat:hover{border-color:var(--pri);color:var(--pri-hi);background:var(--pri-dim)}
 .cvnode .cvchat.corner{position:absolute;top:6px;left:6px;z-index:5;background:rgba(0,0,0,.5);opacity:0}
 .cvnode:hover .cvchat.corner{opacity:1}
+/* v62: continue a clip from its own final frame */
+.cvcont{border:1px solid var(--line2);background:var(--panel2);color:var(--dim);border-radius:6px;
+  padding:2px 8px;font-size:10.5px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
+.cvcont:hover{border-color:var(--sec);color:var(--sec);background:color-mix(in srgb,var(--sec) 14%,transparent)}
+.cvcont:disabled{opacity:.6;cursor:default}
+.cvnode .cvcont.corner{position:absolute;top:6px;left:6px;z-index:5;background:rgba(0,0,0,.58);opacity:0}
+.cvnode:hover .cvcont.corner{opacity:1}
 .cvphead .cvchat{padding:0 5px}
 .cvnode.prompt{padding:8px;cursor:grab}
 .cvnode.prompt:active{cursor:grabbing}
@@ -699,6 +706,6 @@ body[data-screen="board"] #chatView{display:none}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=61"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>

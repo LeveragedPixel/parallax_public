@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 61; // v61: video model picker lists the Seedance workflow variants (Venice + ArtCraft), never a lone "default"
+const BUILD = 62; // v62: Continue clip — chain a shot off its own final frame to build one long, fluid video
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -923,15 +923,79 @@ async function srcToImgAtt(src) {
   if (/^data:image\//i.test(src)) return dataUrlToAtt(src);
   try { const b = await (await fetch(src)).blob(); return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(dataUrlToAtt(String(r.result))); r.onerror = () => res(null); r.readAsDataURL(b); }); } catch { return null; }
 }
+// Some encoders (notably anything from MediaRecorder, and some streamed sources) report
+// duration = Infinity until the file is fully scanned. Seeking far past the end forces the
+// browser to clamp to — and therefore reveal — the true duration. Without this, every
+// frame grab silently fell back to t=0, i.e. the FIRST frame.
+function videoDurationOf(v) {
+  return new Promise((res) => {
+    if (isFinite(v.duration) && v.duration > 0) return res(v.duration);
+    let settled = false;
+    const finish = (d) => { if (settled) return; settled = true; v.removeEventListener("seeked", onSeek); res(d || 0); };
+    const onSeek = () => finish(isFinite(v.duration) && v.duration > 0 ? v.duration : v.currentTime);
+    v.addEventListener("seeked", onSeek);
+    try { v.currentTime = 1e7; } catch { finish(0); }
+    setTimeout(() => finish(isFinite(v.duration) && v.duration > 0 ? v.duration : v.currentTime), 5000);
+  });
+}
+function seekVideo(v, t) {
+  return new Promise((res) => {
+    if (Math.abs(v.currentTime - t) < 0.02) return res();   // already there: no 'seeked' would fire
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; v.removeEventListener("seeked", finish); res(); };
+    v.addEventListener("seeked", finish);
+    try { v.currentTime = t; } catch { finish(); }
+    setTimeout(finish, 5000);
+  });
+}
+// Some clips carry no seek index (seekable range is [0,0] — anything MediaRecorder made,
+// and some streamed sources). Seeking silently does nothing there, which would hand back
+// frame 0 and make a "continuation" start from the WRONG end of the shot. When a seek
+// doesn't land, play the clip up to the mark instead and grab it on the way past.
+async function seekOrPlayTo(v, t) {
+  await seekVideo(v, t);
+  if (Math.abs(v.currentTime - t) < 0.25 || t <= 0) return true;
+  return await new Promise((res) => {
+    let settled = false;
+    const stop = (ok) => {
+      if (settled) return; settled = true;
+      v.removeEventListener("timeupdate", tick); v.removeEventListener("ended", onEnd);
+      try { v.pause(); } catch {}
+      res(ok);
+    };
+    const tick = () => { if (v.currentTime >= t - 0.05) stop(true); };
+    const onEnd = () => stop(true);                       // ran to the end: that IS the last frame
+    v.addEventListener("timeupdate", tick); v.addEventListener("ended", onEnd);
+    v.play().catch(() => stop(false));
+    setTimeout(() => stop(false), Math.min(20000, (t + 2) * 1000 + 3000));
+  });
+}
+function snapFrame(v) {
+  try {
+    const w = v.videoWidth || 640, h = v.videoHeight || 360, s = Math.min(1, 768 / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    return dataUrlToAtt(c.toDataURL("image/jpeg", 0.8));
+  } catch { return null; }   // tainted (CORS) frame
+}
+function loadVideoEl(src) {
+  const v = document.createElement("video");
+  v.muted = true; v.crossOrigin = "anonymous"; v.preload = "auto"; v.src = src;
+  return new Promise((res, rej) => {
+    v.onloadedmetadata = () => res(v);
+    v.onerror = () => rej(new Error("video load failed"));
+    setTimeout(() => rej(new Error("video load timed out")), 15000);
+  });
+}
+
 // Grab a single frame near `fraction` of the video (0.98 ≈ last frame).
 async function grabVideoFrame(src, fraction) {
-  return new Promise((resolve) => {
-    const v = document.createElement("video"); v.muted = true; v.crossOrigin = "anonymous"; v.preload = "auto"; v.src = src;
-    v.onloadedmetadata = () => { const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0; try { v.currentTime = dur ? Math.max(0, dur * fraction - 0.05) : 0; } catch { resolve(null); } };
-    v.onseeked = () => { try { const w = v.videoWidth || 640, h = v.videoHeight || 360, s = Math.min(1, 768 / Math.max(w, h)); const c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s); c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); resolve(dataUrlToAtt(c.toDataURL("image/jpeg", 0.8))); } catch { resolve(null); } };
-    v.onerror = () => resolve(null);
-    setTimeout(() => resolve(null), 15000);
-  });
+  try {
+    const v = await loadVideoEl(src);
+    const dur = await videoDurationOf(v);
+    await seekOrPlayTo(v, dur ? Math.max(0, dur * fraction - 0.03) : 0);
+    return snapFrame(v);
+  } catch { return null; }
 }
 async function sendVideoFramesToChat(src) {
   toast("sampling frames…");
@@ -1000,31 +1064,17 @@ async function saveFrameToGallery(frame, item, index, btn, savedKey) {
 // Extract ~6 evenly-spaced frames from a video (client-side canvas) so Claude can "watch" it —
 // the web equivalent of author's claude-watch ffmpeg step. Frames are downscaled to cap tokens.
 async function extractFrames(src, n = 6) {
-  return new Promise((resolve) => {
-    const v = document.createElement("video");
-    v.muted = true; v.crossOrigin = "anonymous"; v.preload = "auto"; v.src = src;
-    const frames = []; const times = []; let idx = 0;
-    const done = () => resolve(frames);
-    const canvas = document.createElement("canvas");
-    v.onloadedmetadata = () => {
-      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
-      for (let i = 0; i < n; i++) times.push(dur ? (dur * (i + 0.5)) / n : 0);
-      seek();
-    };
-    function seek() { if (idx >= times.length) return done(); try { v.currentTime = times[idx]; } catch { done(); } }
-    v.onseeked = () => {
-      try {
-        const w = v.videoWidth || 640, h = v.videoHeight || 360;
-        const scale = Math.min(1, 768 / Math.max(w, h));
-        canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
-        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
-        const att = dataUrlToAtt(canvas.toDataURL("image/jpeg", 0.7)); if (att) frames.push(att);
-      } catch { /* tainted (CORS) frame — skip */ }
-      idx++; seek();
-    };
-    v.onerror = done;
-    setTimeout(done, 20000); // safety: never hang the UI
-  });
+  const frames = [];
+  try {
+    const v = await loadVideoEl(src);
+    const dur = await videoDurationOf(v);
+    for (let i = 0; i < n; i++) {
+      await seekOrPlayTo(v, dur ? (dur * (i + 0.5)) / n : 0);
+      const att = snapFrame(v); if (att) frames.push(att);
+      if (!dur) break;   // no duration at all: one frame is all there is to take
+    }
+  } catch { /* unreadable source — caller handles the empty result */ }
+  return frames;
 }
 
 // Selected media -> attach to the open chat column so Claude can review. Images attach directly;
@@ -1205,6 +1255,7 @@ function cvAddNodeEl(n) {
     cvWireMedia(n, el);
   } else if (n.kind === "video") {
     el.innerHTML = `<div class="cvimgwrap">${n.src ? `<video src="${n.src}" muted loop playsinline preload="metadata" draggable="false"></video><div class="vbadge">▶ VIDEO</div>` : `<div class="cvmissing">loading…</div>`}</div>
+      ${n.src ? `<button class="cvcont corner" title="Continue clip — starts the next shot from this clip's final frame, so the two cut together seamlessly">⏭ continue</button>` : ""}
       <button class="cvx" title="remove from board (the clip stays in your gallery)">✕</button>
       <div class="cvport" title="drag off to grow from this clip">＋</div>`;
     cvWireMedia(n, el);
@@ -1270,6 +1321,7 @@ function cvAddNodeEl(n) {
   }
   el.querySelector(".cvx").onclick = () => cvRemove(n.id);
   const cvc = el.querySelector(".cvchat"); if (cvc) cvc.onclick = (e) => { e.stopPropagation(); cvSendToChat(n.id); };
+  const cvk = el.querySelector(".cvcont"); if (cvk) cvk.onclick = (e) => { e.stopPropagation(); cvContinueClip(n.id); };
   const rz = document.createElement("div"); rz.className = "cvrz"; rz.title = "drag to resize";
   el.appendChild(rz);
   cvSkillsRow(n, el);
@@ -1367,6 +1419,51 @@ function cvWireRefZone(n, el) {
     if (!got) toast("drop an image, a .wav, or an .mp3 here");
   });
 }
+/* ---- Continue clip: build ONE long video out of short generations ----
+   Seedance can start a shot from a supplied first frame. So the final frame of clip A
+   becomes the first frame of clip B and the two cut together with no visible seam.
+   This lays that out on the board — clip → final frame → next prompt — so the chain is
+   visible and every link stays re-editable. No file is ever cut. */
+async function cvContinueClip(nid) {
+  const n = cvNode(nid); if (!n || !n.src) return;
+  const btn = cvEls[nid] && cvEls[nid].querySelector(".cvcont");
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  try {
+    const frame = await grabVideoFrame(n.src, 0.995);   // as close to the final frame as we can seek
+    if (!frame) { toast("couldn't read that clip's last frame — a remote URL can block frame capture. Try a clip generated here."); return; }
+    await cvWhenReady(); cvLoad();
+    const madeBy = cvNode(n.parentId);   // the prompt node that rendered this clip: inherit its settings
+
+    // 1. the final frame, as its own node (visible, reusable, saved to the gallery)
+    const img = await cvAddImage(frame.dataUrl, null, n.x + (n.w || 300) + 90, n.y - 20);
+    img.parentId = n.id; img.skills = (n.skills || []).slice();
+    cv.edges.push({ from: n.id, to: img.id });
+
+    // 2. the next shot, pre-wired to first-frame continuation
+    // (ArtCraft has no first-frame upload path yet, so continuation runs on Venice)
+    const wasAC = madeBy && madeBy.vprov === "artcraft";
+    const next = {
+      id: cvId(), kind: "prompt", out: "video", w: 320,
+      x: img.x + 320 + 90, y: img.y - 20, parentId: img.id, text: "",
+      skills: (n.skills || []).slice(),
+      vprov: "venice", rmodel: "seedance-2-0-image-to-video",
+      dur: (madeBy && madeBy.dur) || "5s",
+      res: (madeBy && madeBy.res) || "720p",
+      aspect: (madeBy && madeBy.aspect) || "16:9",
+      contFrom: n.id,
+    };
+    cv.nodes.push(next); cv.edges.push({ from: img.id, to: next.id });
+    cvSave();
+    const el = cvAddNodeEl(next); el.style.zIndex = ++cvZ; cvDrawEdges(); cvEmptyUpd();
+    const ta = el.querySelector(".cvtext");
+    if (ta) { ta.placeholder = "what happens NEXT — the shot already starts on the last frame, so describe the continuing action…"; ta.focus(); }
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    toast(wasAC ? "continuing on Venice — first-frame continuation isn't available on ArtCraft yet" : "final frame captured — describe what happens next");
+  } catch (e) {
+    toast("couldn't continue that clip: " + String(e.message || e).slice(0, 120));
+  } finally { if (btn) { btn.disabled = false; btn.textContent = "⏭ continue"; } }
+}
+
 /* ---- board → Dual Mind chat: brainstorm on the Neural Board, then prompt off a
    linked cluster. Walks the (undirected) connected component from a node, pulls its
    images in as chat attachments and its text notes in as the prompt seed. ---- */
@@ -1655,8 +1752,10 @@ async function cvWritePromptFor(n, src, prov, pmodel) {
     ? `Write ONE detailed video-generation prompt for Seedance (subject, motion, camera moves, timing, mood, style). `
     : `Write ONE detailed image-generation prompt (subject, composition, style, lighting, palette, quality tags). `;
   const faithful = src.att || src.videoNode ? "Stay faithful to the source's subject, composition and style except where the request changes them. " : "";
+  // A continuation must read as the SAME take rolling on, not a new setup.
+  const cont = n.contFrom ? "This shot is a DIRECT CONTINUATION: the attached image is the final frame of the previous clip and will be this clip's first frame. Keep the same character, wardrobe, lighting, lens, grade and location so the two cut together invisibly. Describe only the action that follows — do not re-establish the scene, do not cut to a new angle. " : "";
   const skills = await cvSkillBlock(n);
-  const wrap = `${skills}${context}${src.att ? "Look at the attached source image. " : ""}Request: ${instruction || "(no extra request — recreate the source faithfully)"}\n\n${task}${faithful}Output ONLY the prompt text.`;
+  const wrap = `${skills}${context}${src.att ? "Look at the attached source image. " : ""}Request: ${instruction || "(no extra request — continue the shot naturally)"}\n\n${task}${cont}${faithful}Output ONLY the prompt text.`;
   const content = src.att
     ? [{ type: "image", source: { type: "base64", media_type: src.att.media_type, data: src.att.data } }, { type: "text", text: wrap }]
     : wrap;
