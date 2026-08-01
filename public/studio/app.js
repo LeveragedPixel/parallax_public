@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 63; // v63: music video pipeline — dedicated 🎵 audio section with in-browser song slicing, + Music Video project template
+const BUILD = 64; // v64: waveform scrubber for music refs — drag the window, play only it, one stoppable player
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -281,7 +281,7 @@ function setScreen(name) {
   $("scrBoard").classList.toggle("on", s === "board");
   try { localStorage.setItem("plx-screen", s); } catch {}
   if (s === "board") renderSpace();
-  else { chatScrollBottom(); const ta = $("chatText"); if (ta) ta.focus(); }
+  else { cvAudio.stop(); chatScrollBottom(); const ta = $("chatText"); if (ta) ta.focus(); }
 }
 /* Auto-scroll rule: only stick to the bottom when the reader is ALREADY there.
    Scroll up mid-stream and the view stays put — a "↓ latest" button appears instead. */
@@ -1412,7 +1412,64 @@ function cvRefs(n) { if (!n.refs) n.refs = { imgs: [], aud: [] }; n.refs.imgs = 
    in memory (never saved to the board) and a window of it is cut here, in the
    browser: decode → downmix to mono → resample to 22.05k → slice → WAV. Small
    enough to send inline, plenty for beat/timing reference. ------------------- */
-const cvTracks = {};          // nodeId -> { name, dur, buf(ArrayBuffer) } — deliberately NOT persisted
+const cvTracks = {};          // nodeId -> { name, dur, decoded, peaks } — deliberately NOT persisted
+
+/* Every preview in the app goes through THIS one player. Previously each ▶ made its own
+   `new Audio()` with nothing holding the reference: they stacked on top of each other and
+   there was no way to stop them. Now starting anything stops whatever was playing. */
+const cvAudio = {
+  ctx: null, node: null, el: null, raf: 0, owner: null, onFrame: null, t0: 0, from: 0, len: 0,
+  _ac() { const AC = window.AudioContext || window.webkitAudioContext; if (!this.ctx || this.ctx.state === "closed") this.ctx = new AC(); return this.ctx; },
+  stop() {
+    if (this.node) { try { this.node.onended = null; this.node.stop(); } catch {} this.node = null; }
+    if (this.el) { try { this.el.pause(); } catch {} this.el = null; }
+    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
+    const was = this.owner; this.owner = null;
+    if (this.onFrame) { const f = this.onFrame; this.onFrame = null; f(null); }
+    // reset the button in place — re-rendering the slicer here would rip the canvas
+    // out from under a pointerdown that stopped playback in order to reselect.
+    const host = was && cvEls[String(was).split(":")[0]];
+    if (host) { const b = host.querySelector(".sl-play"); if (b) { b.textContent = "▶ play"; b.title = "play just this window"; b.classList.remove("on"); } }
+  },
+  // play exactly [from, from+len) of a decoded buffer, reporting progress for the playhead
+  playWindow(ownerId, decoded, from, len, onFrame) {
+    this.stop();
+    const ac = this._ac();
+    const src = ac.createBufferSource(); src.buffer = decoded; src.connect(ac.destination);
+    this.node = src; this.owner = ownerId; this.onFrame = onFrame || null;
+    this.from = from; this.len = len; this.t0 = ac.currentTime;
+    src.onended = () => { if (this.node === src) this.stop(); };
+    try { src.start(0, from, len); } catch { this.stop(); return false; }
+    const tick = () => {
+      if (this.node !== src) return;
+      const p = ac.currentTime - this.t0;
+      if (this.onFrame) this.onFrame(Math.min(p, len));
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+    return true;
+  },
+  // for already-cut slices (plain data URLs)
+  playUrl(ownerId, url) {
+    this.stop();
+    const a = new Audio(url); this.el = a; this.owner = ownerId;
+    a.onended = () => { if (this.el === a) this.stop(); };
+    a.play().catch(() => { toast("preview blocked by the browser — click the node first"); this.stop(); });
+  },
+  playing(ownerId) { return this.owner === ownerId && !!(this.node || this.el); },
+};
+// peaks for the waveform: one bar per bucket, normalised
+function cvPeaks(decoded, buckets = 150) {
+  const ch = decoded.getChannelData(0), n = ch.length, per = Math.max(1, Math.floor(n / buckets));
+  const out = new Float32Array(buckets); let max = 0;
+  for (let b = 0; b < buckets; b++) {
+    let peak = 0; const st = b * per, en = Math.min(n, st + per);
+    for (let i = st; i < en; i += 2) { const v = ch[i] < 0 ? -ch[i] : ch[i]; if (v > peak) peak = v; }
+    out[b] = peak; if (peak > max) max = peak;
+  }
+  if (max > 0) for (let b = 0; b < buckets; b++) out[b] /= max;
+  return out;
+}
 const MUSIC_WINDOW = 15;      // Venice's hard cap, in seconds
 const fmtClock = (t) => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); };
 
@@ -1478,7 +1535,7 @@ async function cvLoadTrack(n, file) {
   const buf = await file.arrayBuffer();
   const decoded = await decodeTrack(buf);
   const dur = decoded.duration || 0;
-  cvTracks[n.id] = { name: (file.name || "track").slice(0, 48), dur, decoded };
+  cvTracks[n.id] = { name: (file.name || "track").slice(0, 48), dur, decoded, peaks: cvPeaks(decoded) };
   if (dur <= MUSIC_WINDOW + 0.25) {
     // already short enough: attach the whole thing
     const wav = await sliceTrackToWav(decoded, 0, Math.min(dur, MUSIC_WINDOW));
@@ -1490,32 +1547,96 @@ async function cvLoadTrack(n, file) {
   cvSave(); if (el) cvRenderRefs(n, el);
 }
 
-// The window picker: shown only while a long track is loaded on this node.
+// The window picker: a SoundCloud-style waveform you drag to choose which 15s of the
+// song feeds this clip. Playback covers ONLY the selection and is stoppable.
+function cvDrawWave(cvs, t, start, playPos) {
+  const g = cvs.getContext("2d"); const W = cvs.width, H = cvs.height;
+  const css = getComputedStyle(document.body);
+  const dim = (css.getPropertyValue("--line2") || "#39415a").trim();
+  const sel = (css.getPropertyValue("--sec") || "#45c495").trim();
+  const play = (css.getPropertyValue("--pri-hi") || "#8aa4ff").trim();
+  g.clearRect(0, 0, W, H);
+  const peaks = t.peaks, n = peaks.length, bw = W / n, gap = Math.min(2.5, bw * 0.34);
+  const x0 = (start / t.dur) * W, x1 = ((start + MUSIC_WINDOW) / t.dur) * W;
+  // selection band behind the bars
+  g.fillStyle = sel + "22"; g.fillRect(x0, 0, Math.max(2, x1 - x0), H);
+  for (let i = 0; i < n; i++) {
+    const x = i * bw, mid = x + bw / 2, inSel = mid >= x0 && mid <= x1;
+    g.fillStyle = inSel ? sel : dim;
+    const h = Math.max(2, peaks[i] * (H - 6));
+    g.fillRect(x, (H - h) / 2, bw - gap, h);
+  }
+  // window edges
+  g.fillStyle = sel; g.fillRect(x0, 0, 2, H); g.fillRect(Math.max(x0 + 2, x1 - 2), 0, 2, H);
+  // playhead
+  if (playPos != null) {
+    const px = ((start + playPos) / t.dur) * W;
+    g.fillStyle = play; g.fillRect(px - 1, 0, 2, H);
+  }
+}
 function cvRenderSlicer(n, el) {
   const box = el.querySelector(".cvslicer"); if (!box) return;
   const t = cvTracks[n.id];
   if (!t) { box.classList.add("hide"); box.innerHTML = ""; return; }
   const maxStart = Math.max(0, t.dur - MUSIC_WINDOW);
-  const start = Math.min(Math.max(0, n.trackStart || 0), maxStart);
+  if (n.trackStart == null) n.trackStart = 0;
+  n.trackStart = Math.min(Math.max(0, n.trackStart), maxStart);
+  const playing = cvAudio.playing(n.id);
+
   box.classList.remove("hide");
   box.innerHTML = `<div class="sl-h">🎵 ${esc(t.name)} <span class="dim">${fmtClock(t.dur)}</span></div>
-    <input class="sl-range" type="range" min="0" max="${Math.floor(maxStart)}" step="1" value="${Math.floor(start)}">
-    <div class="sl-row"><span class="sl-win">${fmtClock(start)} → ${fmtClock(start + MUSIC_WINDOW)}</span>
-      <button class="sl-play" title="preview this window">▶</button>
+    <canvas class="sl-wave" width="600" height="56" title="drag to choose the ${MUSIC_WINDOW}s that feeds this clip"></canvas>
+    <div class="sl-meta">
+      <span class="sl-win">${fmtClock(n.trackStart)} → ${fmtClock(n.trackStart + MUSIC_WINDOW)}</span>
+      <span class="sl-hint">drag to choose</span>
+    </div>
+    <div class="sl-row">
+      <button class="sl-play${playing ? " on" : ""}" title="${playing ? "stop" : "play just this window"}">${playing ? "■ stop" : "▶ play"}</button>
       <button class="sl-use btn-solid">✂ use this ${MUSIC_WINDOW}s</button>
-      <button class="sl-drop" title="discard this track">✕</button></div>`;
-  const range = box.querySelector(".sl-range"), win = box.querySelector(".sl-win");
-  range.oninput = () => { n.trackStart = Number(range.value); win.textContent = fmtClock(n.trackStart) + " → " + fmtClock(n.trackStart + MUSIC_WINDOW); };
-  box.querySelector(".sl-play").onclick = async (e) => {
+      <button class="sl-drop" title="discard this track">✕</button>
+    </div>`;
+
+  const cvs = box.querySelector(".sl-wave");
+  const win = box.querySelector(".sl-win");
+  const redraw = (pos) => cvDrawWave(cvs, t, n.trackStart, pos);
+  redraw(null);
+
+  // drag / click anywhere on the waveform to move the window (centred on the pointer)
+  const posFor = (e) => {
+    const r = cvs.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    return Math.round(Math.min(maxStart, Math.max(0, frac * t.dur - MUSIC_WINDOW / 2)) * 10) / 10;
+  };
+  let dragging = false;
+  const move = (e) => {
+    if (!dragging) return;
+    n.trackStart = posFor(e);
+    win.textContent = fmtClock(n.trackStart) + " → " + fmtClock(n.trackStart + MUSIC_WINDOW);
+    redraw(null);
+  };
+  cvs.addEventListener("pointerdown", (e) => {
+    e.stopPropagation(); e.preventDefault();      // don't drag the node itself
+    cvAudio.stop();                               // selecting a new section stops playback
+    dragging = true; try { cvs.setPointerCapture(e.pointerId); } catch {}
+    move(e);
+  });
+  cvs.addEventListener("pointermove", move);
+  const end = (e) => { if (!dragging) return; dragging = false; try { cvs.releasePointerCapture(e.pointerId); } catch {} cvSave(); };
+  cvs.addEventListener("pointerup", end); cvs.addEventListener("pointercancel", end);
+
+  box.querySelector(".sl-play").onclick = (e) => {
     e.stopPropagation();
-    try {
-      const wav = await sliceTrackToWav(t.decoded, n.trackStart || 0, MUSIC_WINDOW);
-      const a = new Audio(wav); a.play().catch(() => toast("preview blocked by the browser"));
-    } catch { toast("couldn't preview that window"); }
+    if (cvAudio.playing(n.id)) { cvAudio.stop(); return; }
+    cvAudio.playWindow(n.id, t.decoded, n.trackStart, MUSIC_WINDOW, (pos) => {
+      if (pos == null) { redraw(null); return; }
+      redraw(pos);
+    });
+    const b = box.querySelector(".sl-play"); if (b) { b.textContent = "■ stop"; b.title = "stop"; b.classList.add("on"); }
   };
   box.querySelector(".sl-use").onclick = async (e) => {
     e.stopPropagation();
     const btn = e.currentTarget; btn.disabled = true; btn.textContent = "cutting…";
+    cvAudio.stop();
     try {
       const wav = await sliceTrackToWav(t.decoded, n.trackStart || 0, MUSIC_WINDOW);
       cvRefs(n).aud.push({ dataUrl: wav, name: t.name + " " + fmtClock(n.trackStart || 0), dur: MUSIC_WINDOW, from: n.trackStart || 0 });
@@ -1523,9 +1644,8 @@ function cvRenderSlicer(n, el) {
       toast("music window attached — Seedance will cut to it");
     } catch { toast("couldn't cut that window"); btn.disabled = false; btn.textContent = "✂ use this " + MUSIC_WINDOW + "s"; }
   };
-  box.querySelector(".sl-drop").onclick = (e) => { e.stopPropagation(); delete cvTracks[n.id]; cvRenderRefs(n, el); };
+  box.querySelector(".sl-drop").onclick = (e) => { e.stopPropagation(); cvAudio.stop(); delete cvTracks[n.id]; cvRenderRefs(n, el); };
 }
-
 function cvBindPicks(n, el) {
   el.querySelectorAll(".cvrefpick").forEach((pick) => {
     pick.onclick = (e) => {
@@ -1542,7 +1662,9 @@ function cvRenderRefs(n, el) {
   const refs = cvRefs(n);
   // restore the drop label (cvLoadTrack borrows it for "reading …" progress)
   const az = el.querySelector('.cvrefzone[data-kind="audio"]');
-  if (az && !cvTracks[n.id]) az.innerHTML = 'drop your track — or <u class="cvrefpick" data-kind="audio">browse</u>';
+  if (az) az.innerHTML = cvTracks[n.id]
+    ? 'drop another track to replace — or <u class="cvrefpick" data-kind="audio">browse</u>'
+    : 'drop your track — or <u class="cvrefpick" data-kind="audio">browse</u>';
   const imgBox = el.querySelector(".cvrefchips.img"), audBox = el.querySelector(".cvrefchips.aud");
   if (imgBox) {
     imgBox.innerHTML = "";
@@ -1563,7 +1685,15 @@ function cvRenderRefs(n, el) {
       c.title = lost ? "music doesn't survive a reload — drop the track again" : "music reference — steers Seedance's timing, beat and cuts";
       if (!lost) {
         const play = document.createElement("button"); play.className = "x"; play.textContent = "▶"; play.title = "preview";
-        play.onclick = (e) => { e.stopPropagation(); const a = new Audio(r.dataUrl); a.play().catch(() => {}); };
+        const key = n.id + ":aud:" + i;
+        play.textContent = cvAudio.playing(key) ? "■" : "▶";
+        play.onclick = (e) => {
+          e.stopPropagation();
+          if (cvAudio.playing(key)) { cvAudio.stop(); play.textContent = "▶"; return; }
+          cvAudio.playUrl(key, r.dataUrl); play.textContent = "■";
+          const back = () => { if (!cvAudio.playing(key)) { play.textContent = "▶"; clearInterval(iv); } };
+          const iv = setInterval(back, 250);
+        };
         c.appendChild(play);
       }
       const x = document.createElement("button"); x.className = "x"; x.textContent = "✕"; x.title = "remove";
@@ -1708,6 +1838,8 @@ function cvRebuildNode(n) {
   cvDrawEdges();
 }
 function cvRemove(id) {
+  if (cvAudio.owner === id || String(cvAudio.owner || "").startsWith(id + ":")) cvAudio.stop();
+  delete cvTracks[id];
   cv.nodes = cv.nodes.filter((x) => x.id !== id);
   cv.edges = cv.edges.filter((e) => e.from !== id && e.to !== id);
   const el = cvEls[id]; if (el) el.remove(); delete cvEls[id];
@@ -2151,6 +2283,7 @@ async function cvOpenProjectBoard(p) {
 }
 async function cvOpenBoard(id) {
   cvFlush();   // don't lose edits to the board we're leaving
+  cvAudio.stop();   // nothing keeps playing over a board you've left
   let doc = null, name = "";
   try { const d = await api("/api/boards?id=" + encodeURIComponent(id)); doc = d.board; name = d.name || ""; } catch {}
   // Crash-safety reconcile: if the local cache for this board is newer, it wins.
