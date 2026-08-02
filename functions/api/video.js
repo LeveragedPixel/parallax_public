@@ -16,6 +16,28 @@ function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 }
 
+/* Seedance binds reference media to the prompt by token — @Image1, @Video1, @Audio1, numbered
+   within each array. A reference the prompt never NAMES is accepted, billed, and then ignored
+   by the model: that is why a dropped song changed nothing about the render. Prompts reach the
+   queue from several paths (prewritten board nodes, older saved nodes, the Console), so bind
+   whatever the writer left out instead of trusting every path got it right.
+   Exported for tests — pure, no I/O. */
+export function bindRefTokens(prompt, params) {
+  const p = String(prompt || "");
+  const missing = (tok, n) => {
+    const out = [];
+    for (let i = 1; i <= n; i++) if (!new RegExp("@" + tok + i + "(?!\\d)", "i").test(p)) out.push("@" + tok + i);
+    return out;
+  };
+  const vis = [...missing("Image", (params.reference_image_urls || []).length),
+               ...missing("Video", (params.reference_video_urls || []).length)];
+  const aud = missing("Audio", (params.reference_audio_urls || []).length);
+  let out = p;
+  if (vis.length) out += `\n\nUse ${vis.join(", ")} as the visual reference for this shot.`;
+  if (aud.length) out += `\n\n${aud.join(", ")} is the track this shot is cut to — time the motion, camera hits and edit points to its beat and energy.`;
+  return { prompt: out, bound: [...vis, ...aud] };
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const token = tokenFrom(request);
@@ -48,7 +70,10 @@ export async function onRequestPost(context) {
   } else if (project) {
     const content = [];
     imgs.forEach((im) => content.push({ type: "image", source: { type: "base64", media_type: im.media_type, data: im.data } }));
-    if (imgs.length) content.push({ type: "text", text: `The ${imgs.length} image(s) above are references, labelled ${imgs.map((_, i) => "@image" + (i + 1)).join(", ")}. Reference them by those exact tokens in the prompt.` });
+    // Seedance's tokens are capitalised (@Image1, @Video1, @Audio1) — lowercase was not binding.
+    if (imgs.length) content.push({ type: "text", text: `The ${imgs.length} image(s) above are references, labelled ${imgs.map((_, i) => "@Image" + (i + 1)).join(", ")}. Reference them by those exact tokens in the prompt.` });
+    if (audios.length) content.push({ type: "text", text: `There ${audios.length === 1 ? "is 1 music reference" : "are " + audios.length + " music references"}, labelled ${audios.map((_, i) => "@Audio" + (i + 1)).join(", ")}. Name each one in the prompt — audio you don't name is ignored by the model. Treat it as the track the shot is cut to: sync motion, camera hits and edit points to its beat.` });
+    if (videos.length) content.push({ type: "text", text: `Reference clip(s) labelled ${videos.map((_, i) => "@Video" + (i + 1)).join(", ")}. Name them in the prompt.` });
     if (imageUrl) content.push({ type: "text", text: `Reference image URL: ${imageUrl}` });
     content.push({ type: "text", text: brief || "Write a Seedance prompt for the provided reference image(s)." });
     try { yaml = await claudeComplete(keys.anthropic, promptModel, composeSystem(project, await mergedCatalog(env, user)), content); }
@@ -60,7 +85,7 @@ export async function onRequestPost(context) {
   if (!body.prewritten && settings.translateChinese) {
     try {
       yamlZh = await claudeComplete(keys.anthropic, promptModel,
-        "Translate this Seedance prompt to Simplified Chinese. Translate VALUES only; keep YAML keys, @imageN tokens, timestamps, and format specs in English. Output only the translated block.",
+        "Translate this Seedance prompt to Simplified Chinese. Translate VALUES only; keep YAML keys, reference tokens (@Image1, @Video1, @Audio1 — exact case), timestamps, and format specs in English. Output only the translated block.",
         [{ type: "text", text: yaml }]);
     } catch { /* non-fatal */ }
   }
@@ -150,6 +175,16 @@ export async function onRequestPost(context) {
     // aspect_ratio: image-to-video derives it from the image and REJECTS the field.
     if (!usingFirstFrameImage && !isImageToVideo && (opts.aspect_ratio || settings.aspect)) {
       params.aspect_ratio = opts.aspect_ratio || settings.aspect;
+    }
+
+    // Last line of defence. Seedance only uses a reference the prompt NAMES (@Image1/@Video1/
+    // @Audio1); anything unnamed is dropped on the floor, silently and at full price. Prompts
+    // arrive here from several paths (prewritten board nodes, older saved nodes, the Console),
+    // so bind any token the writer left out rather than trusting it got them all right.
+    if (isReference) {
+      const b = bindRefTokens(params.prompt, params);
+      params.prompt = b.prompt;
+      if (b.bound.length) console.log("[video] bound unnamed refs:", b.bound.join(","));
     }
 
     // Face-media consent: only attach the attestation when the client has confirmed it.

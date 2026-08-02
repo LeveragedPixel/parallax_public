@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 64; // v64: waveform scrubber for music refs — drag the window, play only it, one stoppable player
+const BUILD = 65; // v65: bind reference media to the prompt (@Image1/@Video1/@Audio1) — unnamed refs were ignored
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -2070,6 +2070,29 @@ async function cvAsk(nid) {
   finally { n.busy = false; if (btn) btn.disabled = false; }
 }
 
+/* Seedance binds reference media to the prompt by TOKEN — @Image1, @Video1, @Audio1, numbered
+   within each array. Media sent without its token is silently ignored by the model, which is
+   why a dropped song changed nothing about the render. Tell the prompt-writer which slots
+   exist so it names them. Only applies in reference-to-video mode: first-frame i2v takes a
+   plain `image_url` and has no tokens, so mirror video.js's routing rule exactly. */
+function cvRefTokenBrief(n, src) {
+  if ((n.out || "image") !== "video") return "";
+  const rf = n.refs || {};
+  const dropped = (rf.imgs || []).filter((r) => r.dataUrl).length;
+  const imgN = (src.att ? 1 : 0) + dropped;
+  const vidN = src.videoNode && src.videoNode.src && !/^data:/.test(src.videoNode.src) ? 1 : 0;
+  const audN = (rf.aud || []).filter((r) => r.dataUrl).length;
+  const isRef = audN > 0 || vidN > 0 || imgN > 1 || /reference/.test(String(n.rmodel || ""));
+  if (!isRef || !(imgN || vidN || audN)) return "";
+
+  const slots = [];
+  for (let i = 1; i <= imgN; i++) slots.push("@Image" + i + (i === 1 && src.att ? " (the source frame this grew from)" : ""));
+  for (let i = 1; i <= vidN; i++) slots.push("@Video" + i + " (the reference clip)");
+  for (let i = 1; i <= audN; i++) slots.push("@Audio" + i + " (a music clip)");
+  return `This renders on Seedance REFERENCE-TO-VIDEO, where each reference is bound to the prompt by a token — any reference you do not name is ignored by the model. The available tokens are: ${slots.join(", ")}. Use every one of them at least once, spelled exactly like that (capital first letter), woven into the sentence rather than listed — e.g. "@Image1 turns to camera as @Audio1 drops". `
+    + (audN ? `Treat @Audio1 as the track the shot is cut to: sync the motion, camera hits and edit points to its beat and energy. Do not treat it as dialogue or write lip-sync unless the request explicitly asks for it. ` : "");
+}
+
 /* ---- prompt nodes: generate image or video ---- */
 async function cvWritePromptFor(n, src, prov, pmodel) {
   const isVideo = (n.out || "image") === "video";
@@ -2083,7 +2106,7 @@ async function cvWritePromptFor(n, src, prov, pmodel) {
   // A continuation must read as the SAME take rolling on, not a new setup.
   const cont = n.contFrom ? "This shot is a DIRECT CONTINUATION: the attached image is the final frame of the previous clip and will be this clip's first frame. Keep the same character, wardrobe, lighting, lens, grade and location so the two cut together invisibly. Describe only the action that follows — do not re-establish the scene, do not cut to a new angle. " : "";
   const skills = await cvSkillBlock(n);
-  const wrap = `${skills}${context}${src.att ? "Look at the attached source image. " : ""}Request: ${instruction || "(no extra request — continue the shot naturally)"}\n\n${task}${cont}${faithful}Output ONLY the prompt text.`;
+  const wrap = `${skills}${context}${src.att ? "Look at the attached source image. " : ""}Request: ${instruction || "(no extra request — continue the shot naturally)"}\n\n${task}${cvRefTokenBrief(n, src)}${cont}${faithful}Output ONLY the prompt text.`;
   const content = src.att
     ? [{ type: "image", source: { type: "base64", media_type: src.att.media_type, data: src.att.data } }, { type: "text", text: wrap }]
     : wrap;
