@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 66; // v66: readable type scale + text-size control; all API models unlocked behind a confirm
+const BUILD = 67; // v67: unlock the models endpoint too — v66 missed it, so Venice image models came back empty
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -1243,15 +1243,22 @@ function cvAgentOptions(sel, current) {
   sel.value = current || ("claude|" + $("mClaude").value);
   if (!sel.value) sel.selectedIndex = 0;
 }
+const genModelsNote = {};
 async function cvRenderModels(prov, type) {
   const ck = prov + ":" + type;
   // Only cache a NON-empty answer: a transient failure used to be cached for the whole
   // session, which is what pinned the video picker to a lone "default".
   if (!genModelsCache[ck] || !genModelsCache[ck].length) {
-    try { const d = await api(`/api/models?provider=${prov}&type=${type}`); genModelsCache[ck] = d.models || []; } catch { genModelsCache[ck] = []; }
+    try {
+      const d = await api(`/api/models?provider=${prov}&type=${type}`);
+      genModelsCache[ck] = d.models || [];
+      genModelsNote[ck] = d.note || "";
+    } catch (e) { genModelsCache[ck] = []; genModelsNote[ck] = "couldn't reach the model list"; }
   }
   return genModelsCache[ck];
 }
+// An empty picker used to look like a dead end with no reason given — say why. (v66)
+function cvModelsNote(prov, type) { return genModelsNote[prov + ":" + type] || ""; }
 
 /* ---- skills on nodes: attached skills ride every generation off the node and are
    inherited by everything grown from it, until toggled off. The agent is told to
@@ -1401,9 +1408,15 @@ function cvAddNodeEl(n) {
     const qs = el.querySelector(".cvquality");
     if (qs) qs.onchange = () => { n.iq = qs.value; cvSave(); };
     const rm = el.querySelector(".cvrmodel");
-    cvRenderModels(out === "video" ? vprov : (iprov === "openai" ? "gpt" : iprov), out).then((models) => {
+    const mprov = out === "video" ? vprov : (iprov === "openai" ? "gpt" : iprov);
+    cvRenderModels(mprov, out).then((models) => {
       for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.label || m.id; rm.appendChild(o); }
       if (n.rmodel) rm.value = n.rmodel;
+      if (!models.length) {
+        const why = cvModelsNote(mprov, out) || "no models returned for this API";
+        rm.options[0].textContent = "⚠ " + why;
+        rm.title = why;
+      }
     });
     rm.onchange = () => { n.rmodel = rm.value || null; cvSave(); };
     const cc = el.querySelector(".cvcount"); if (cc) cc.onchange = (e) => { n.count = e.target.value; cvSave(); };

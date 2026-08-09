@@ -28,15 +28,23 @@ export async function onRequestGet(context) {
     if (provider === "claude") return json({ ok: true, provider, models: await listClaude(keys.anthropic) });
     if (provider === "gpt") return json({ ok: true, provider, type, models: await listGPT(keys.openai, type === "image" && hasTypeParam(request)) });
     if (provider === "venice") {
-      // v60: Venice serves VIDEO models only — image generation is OpenAI-only.
-      if (type === "image") return json({ ok: true, provider, type, models: [], note: "image generation runs on OpenAI only" });
+      // v66: images are unlocked again — Venice's own image catalogue (Nano Banana Pro and
+      // the rest) is served straight from its /models list. The spend safeguard is the
+      // Generate confirmation, not an empty picker.
+      if (type === "image") {
+        if (!keys.venice) return json({ ok: true, provider, type, models: [], note: "Venice not connected — add your key in Connections" });
+        try { return json({ ok: true, provider, type, models: await veniceModels(keys.venice, "image") }); }
+        catch (e) { return json({ ok: true, provider, type, models: [], note: "couldn't reach Venice's image model list: " + (e.message || "unknown") }); }
+      }
       // The Seedance catalog is a constant, so offer it even with no key / a failed
       // probe — an unconfigured provider should never collapse the picker to "default".
       if (!keys.venice) return json({ ok: true, provider, type, models: VENICE_SEEDANCE_VIDEO, note: "Venice not connected — add your key in Connections to render" });
       try { return json({ ok: true, provider, type, models: await veniceModels(keys.venice, type) }); }
       catch { return json({ ok: true, provider, type, models: VENICE_SEEDANCE_VIDEO, note: "couldn't reach Venice's model list — showing the Seedance catalog" }); }
     }
-    if (provider === "artcraft") return json({ ok: true, provider, type, models: type === "image" ? [] : artcraftModels(type), note: type === "image" ? "image generation runs on OpenAI only" : undefined });
+    // v66: ArtCraft's image catalogue (Nano Banana Pro, Seedream, FLUX…) is a constant, so
+    // it lists even when the key is missing — the picker should never collapse to "default".
+    if (provider === "artcraft") return json({ ok: true, provider, type, models: artcraftModels(type) });
     return json({ error: "unknown provider" }, 400);
   } catch (err) {
     return json({ error: err.message || "model detection failed" });
