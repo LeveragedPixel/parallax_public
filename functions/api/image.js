@@ -77,7 +77,7 @@ export async function onRequestPost(context) {
         const entry = await addMedia(env, user, { type: "image", provider: "openai", prompt: promptUsed, dataUrl, projectId: project ? project.id : null, meta: { model: opts.model || "gpt-image-2", quality: opts.quality || "medium" } });
         saved.push({ id: entry ? entry.id : null, dataUrl });
       }
-      return json({ ok: true, stage: "generated", provider: "openai", promptUsed, images: saved });
+      return json({ ok: true, stage: "generated", provider: "openai", model: opts.model || "gpt-image-2", promptUsed, images: saved });
     } catch (err) { return json({ error: "OpenAI image failed: " + (err.message || "unknown"), promptUsed }); }
   }
   if (provider === "artcraft") {
@@ -94,7 +94,7 @@ export async function onRequestPost(context) {
         uuid_idempotency_token: crypto.randomUUID(),
       };
       const g = await artcraftGenerate(keys.artcraftBase, keys.artcraft, "image", opts.model || "multi_function/nano_banana_pro", acBody);
-      return json({ ok: true, stage: "queued", provider: "artcraft", job: g.job, promptUsed });
+      return json({ ok: true, stage: "queued", provider: "artcraft", model: opts.model || "multi_function/nano_banana_pro", job: g.job, promptUsed });
     } catch (err) { return json({ error: "ArtCraft image failed: " + (err.message || "unknown"), promptUsed }); }
   }
 
@@ -113,7 +113,7 @@ export async function onRequestPost(context) {
       const entry = await addMedia(env, user, { type: "image", provider: "venice", prompt: promptUsed, dataUrl, projectId: project ? project.id : null, meta: { model: params.model } });
       saved.push({ id: entry ? entry.id : null, dataUrl });
     }
-    return json({ ok: true, stage: "generated", provider: "venice", promptUsed, images: saved, balanceUsd: out.balanceUsd });
+    return json({ ok: true, stage: "generated", provider: "venice", model: params.model, promptUsed, images: saved, balanceUsd: out.balanceUsd });
   } catch (err) { return json({ error: "image gen failed: " + (err.message || "unknown"), promptUsed }); }
   } catch (fatal) { return json({ error: "image failed: " + (fatal.message || "unknown") }); }
 }

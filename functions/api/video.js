@@ -235,7 +235,7 @@ export async function onRequestGet(context) {
     let mediaId = null;
     if (r.done && r.url) {
       const isData = r.url.startsWith("data:");
-      const entry = await addMedia(env, user, { type: "video", provider: "venice", dataUrl: isData ? r.url : null, url: isData ? null : r.url, projectId: projectId || null, meta: { queueId: job } });
+      const entry = await addMedia(env, user, { type: "video", provider: "venice", dataUrl: isData ? r.url : null, url: isData ? null : r.url, projectId: projectId || null, meta: { queueId: job, model: model || r.model || "" } });
       mediaId = entry ? entry.id : null;
     }
     return json({ ok: true, status: r.status, url: r.done ? r.url : null, mediaId });

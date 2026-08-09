@@ -15,12 +15,13 @@ export async function onRequestGet(context) {
   const token = tokenFrom(request);
   if (!(await verifyToken(token, env.SESSION_SECRET))) return json({ error: "unauthorized" }, 401);
 
-  let provider = "artcraft", job = "", type = "image";
+  let provider = "artcraft", job = "", type = "image", model = "";
   try {
     const u = new URL(request.url);
     provider = u.searchParams.get("provider") || "artcraft";
     job = u.searchParams.get("job") || "";
     type = u.searchParams.get("type") || "image";
+    model = u.searchParams.get("model") || "";   // v68: recorded so the render can be credited
   } catch {}
   if (!job) return json({ error: "job required" }, 400);
 
@@ -33,7 +34,7 @@ export async function onRequestGet(context) {
     const r = await artcraftJob(keys.artcraftBase, keys.artcraft, job);
     let mediaId = null;
     if (r.done && r.url) {
-      const entry = await addMedia(env, user, { type, provider: "artcraft", url: r.url, prompt: "", meta: { job } });
+      const entry = await addMedia(env, user, { type, provider: "artcraft", url: r.url, prompt: "", meta: { job, model: model || r.model || "" } });
       mediaId = entry ? entry.id : null;
     }
     return json({ ok: true, status: r.status, done: r.done, failed: r.failed, url: r.url, mediaId });

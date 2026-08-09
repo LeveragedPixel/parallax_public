@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 67; // v67: unlock the models endpoint too — v66 missed it, so Venice image models came back empty
+const BUILD = 68; // v68: every render credited "API · Model" on the board, gallery tiles and lightbox
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -883,6 +883,9 @@ function galTile(m) {
   del.onclick = async (e) => { e.stopPropagation(); delete galSel[m.id]; await api("/api/gallery?id=" + m.id, null, "DELETE"); loadRefWall(); };
   t.appendChild(del);
   if (m.type === "video") { const b = document.createElement("div"); b.className = "vbadge"; b.textContent = "▶ VIDEO"; t.appendChild(b); }
+  // v68: credit the pipeline on the tile — the index already carries provider + meta.model
+  const credit = genCredit(genFrom(m.provider || "", (m.meta && m.meta.model) || ""));
+  if (credit) { const g = document.createElement("div"); g.className = "genbadge"; g.textContent = credit; g.title = "made with " + credit; t.appendChild(g); }
   api("/api/gallery?id=" + m.id).then((it) => {
     const src = it.dataUrl || it.url || ""; t._src = src; t._type = m.type;
     if (galSel[m.id]) galSel[m.id].src = src;
@@ -970,6 +973,14 @@ function openLightbox(type, src, media) {
       lbBtn("→ Board", async () => { if (await routeMediaTo("board", item)) closeLightbox(); }, "btn-ghost")
     );
     body.appendChild(row);
+  }
+  // v68: name the pipeline in the big viewer too — this is where you go to ask
+  // "how did I make that?", and the prompt is already shown alongside it.
+  const cred = genCredit(genFrom((media && media.provider) || "", (media && media.meta && media.meta.model) || ""));
+  if (cred) {
+    const c = document.createElement("div"); c.className = "lbcredit";
+    c.innerHTML = `<span class="k">made with</span> <b>${esc(cred)}</b>`;
+    body.appendChild(c);
   }
   show("galLightbox");
 }
@@ -1331,12 +1342,13 @@ function cvAddNodeEl(n) {
   el.style.width = (n.w || { image: 300, video: 320, prompt: 372, text: 380 }[n.kind] || 320) + "px";
   if (n.kind === "image") {
     el.innerHTML = `<div class="cvimgwrap">${n.dataUrl ? `<img src="${n.dataUrl}" draggable="false">` : `<div class="cvmissing">loading…</div>`}</div>
+      ${genCredit(n.gen) ? `<div class="genbadge" title="made with ${esc(genCredit(n.gen))}">${esc(genCredit(n.gen))}</div>` : ""}
       <button class="cvchat corner" title="send this image — and anything linked to it — to the Dual Mind chat">💬</button>
       <button class="cvx" title="remove from board (the image stays in your gallery)">✕</button>
       <div class="cvport" title="drag off to grow from this image">＋</div>`;
     cvWireMedia(n, el);
   } else if (n.kind === "video") {
-    el.innerHTML = `<div class="cvimgwrap">${n.src ? `<video src="${n.src}" muted loop playsinline preload="metadata" draggable="false"></video><div class="vbadge">▶ VIDEO</div>` : `<div class="cvmissing">loading…</div>`}</div>
+    el.innerHTML = `<div class="cvimgwrap">${n.src ? `<video src="${n.src}" muted loop playsinline preload="metadata" draggable="false"></video><div class="vbadge">▶ VIDEO</div>${genCredit(n.gen) ? `<div class="genbadge" title="made with ${esc(genCredit(n.gen))}">${esc(genCredit(n.gen))}</div>` : ""}` : `<div class="cvmissing">loading…</div>`}</div>
       ${n.src ? `<button class="cvcont corner" title="Continue clip — starts the next shot from this clip's final frame, so the two cut together seamlessly">⏭ continue</button>` : ""}
       <button class="cvx" title="remove from board (the clip stays in your gallery)">✕</button>
       <div class="cvport" title="drag off to grow from this clip">＋</div>`;
@@ -1983,6 +1995,49 @@ function cvWheel(e) {
   clearTimeout(cvWheel._t); cvWheel._t = setTimeout(cvSave, 400);
 }
 
+/* ---- provenance (v68) -------------------------------------------------------
+   Every render is credited "API · Model" on the node and in the gallery, so six
+   months from now it's obvious which pipeline made a frame. Model ids are ugly
+   wire values (seedance-2-0-reference-to-video, multi_function/nano_banana_pro),
+   so they're prettied here — unknown ids still render, just tidied. */
+const GEN_API = { openai: "GPT", venice: "Venice", artcraft: "ArtCraft", upload: "Upload" };
+/* Model ids arrive as wire values — "seedance-2-0-reference-to-video",
+   "multi_function/bytedance_seedream_v4p5", "gpt_image_1p5". Two conventions to undo:
+   separators are - or _, and "1p5" is how ArtCraft writes 1.5. The workflow suffix
+   (reference-to-video / text-to-image) is routing, not identity, so it's dropped.
+   Anything unrecognised still gets credited, just tidied. */
+function genModelLabel(id) {
+  const raw = String(id || "").replace(/^multi_function\//, "").replace(/^bytedance[-_ ]/i, "").trim();
+  if (!raw) return "";
+  const norm = raw.replace(/[-_]+/g, " ").trim();
+  const ver = (a, b) => a + (b ? "." + b : "");
+  const tag = () => (/\bfast\b/i.test(norm) ? " Fast" : "") + (/\bpro\b/i.test(norm) ? " Pro" : "") + (/\bultra\b/i.test(norm) ? " Ultra" : "");
+  let m;
+  if ((m = norm.match(/nano banana(?:\s+(pro|\d+))?/i)))
+    return "Nano Banana" + (m[1] ? " " + (/pro/i.test(m[1]) ? "Pro" : m[1]) : "");
+  if ((m = norm.match(/seedance\s*(\d+)(?:[ .p](\d+))?/i))) return "Seedance " + ver(m[1], m[2]) + tag();
+  if ((m = norm.match(/seedream\s*v?(\d+)(?:[ .p](\d+))?/i))) return "Seedream " + ver(m[1], m[2]) + tag();
+  if ((m = norm.match(/gpt image\s*(\d+)(?:[ .p](\d+))?/i))) return "GPT Image " + ver(m[1], m[2]);
+  if ((m = norm.match(/kling\s*(\d+)(?:[ .p](\d+))?/i))) return "Kling " + ver(m[1], m[2]) + tag();
+  if ((m = norm.match(/veo\s*(\d+)(?:[ .p](\d+))?/i))) return "Veo " + ver(m[1], m[2]) + tag();
+  if ((m = norm.match(/sora\s*(\d+)/i))) return "Sora " + m[1] + tag();
+  if ((m = norm.match(/venice sd\s*(\d)(\d)/i))) return "Venice SD" + m[1] + "." + m[2];
+  if (/\bflux\b/i.test(norm)) {
+    const v = norm.match(/flux[a-z ]*?(\d+(?:[ .](\d+))?)/i);
+    return "FLUX" + tag() + (/\bdev\b/i.test(norm) ? " dev" : "") + (v ? " " + v[1].replace(/ /g, ".") : "");
+  }
+  return norm.replace(/(\d)p(\d)/g, "$1.$2");
+}
+// "Venice · Seedance 2.0". Provider alone is still worth showing when the model is unknown.
+function genCredit(gen) {
+  if (!gen) return "";
+  const api = GEN_API[gen.provider] || (gen.provider ? String(gen.provider).toUpperCase() : "");
+  const model = genModelLabel(gen.model);
+  if (api && model) return api + " · " + model;
+  return api || model || "";
+}
+function genFrom(provider, model) { return provider || model ? { provider: provider || "", model: model || "" } : null; }
+
 /* ---- adding media to the board ---- */
 function cvCenter() { const r = cvView().getBoundingClientRect(); return { x: (r.width / 2 - cv.pan.x) / cv.zoom - 140, y: (r.height / 2 - cv.pan.y) / cv.zoom - 100 }; }
 async function cvAddImage(dataUrl, galleryId, x, y) {
@@ -1994,9 +2049,9 @@ async function cvAddImage(dataUrl, galleryId, x, y) {
   }
   return n;
 }
-function cvAddVideo(src, galleryId, x, y, parentId) {
+function cvAddVideo(src, galleryId, x, y, parentId, gen) {
   const par = parentId ? cvNode(parentId) : null;
-  const n = { id: cvId(), kind: "video", x, y, w: 300, galleryId: galleryId || null, src, parentId: parentId || null, skills: par && par.skills ? par.skills.slice() : [] };
+  const n = { id: cvId(), kind: "video", x, y, w: 300, galleryId: galleryId || null, src, parentId: parentId || null, gen: gen || null, skills: par && par.skills ? par.skills.slice() : [] };
   cv.nodes.push(n); if (parentId) cv.edges.push({ from: parentId, to: n.id });
   cvSave(); cvAddNodeEl(n); cvDrawEdges(); cvEmptyUpd();
   return n;
@@ -2239,7 +2294,7 @@ async function cvGenerate(nid) {
         if (v && !v.error && v.stage === "generated" && v.images && v.images.length) {
           if (v.balanceUsd != null) bal = v.balanceUsd;
           const im = v.images[0];
-          const child = { id: cvId(), kind: "image", x: n.x + (n.w || 320) + 90, y: n.y - 40 + i * 250, w: 280, galleryId: im.id || null, dataUrl: im.dataUrl, parentId: n.id, skills: (n.skills || []).slice() };
+          const child = { id: cvId(), kind: "image", x: n.x + (n.w || 320) + 90, y: n.y - 40 + i * 250, w: 280, galleryId: im.id || null, dataUrl: im.dataUrl, parentId: n.id, gen: genFrom(v.provider || n.iprov || "openai", v.model || n.rmodel || ""), skills: (n.skills || []).slice() };
           cv.nodes.push(child); cv.edges.push({ from: n.id, to: child.id });
           cvAddNodeEl(child); ok++;
         } else {
@@ -2329,11 +2384,11 @@ async function cvPollVideo(n, job, model, provider) {
     let d;
     try {
       d = provider === "artcraft"
-        ? await api(`/api/genjob?provider=artcraft&job=${encodeURIComponent(job)}&type=video`)
+        ? await api(`/api/genjob?provider=artcraft&job=${encodeURIComponent(job)}&type=video&model=${encodeURIComponent(model || "")}`)
         : await api(`/api/video?job=${encodeURIComponent(job)}&model=${encodeURIComponent(model)}`);
     } catch { continue; }
     if (d.url) {
-      cvAddVideo(d.url, d.mediaId || null, n.x + (n.w || 320) + 90, n.y - 30, n.id);
+      cvAddVideo(d.url, d.mediaId || null, n.x + (n.w || 320) + 90, n.y - 30, n.id, genFrom(provider, d.model || model || n.rmodel || ""));
       loadRefWallIfOpen();
       if (stat) stat.textContent = `done ✓ · ${apiName}`;
       return;
@@ -2351,13 +2406,21 @@ function cvRebuildAll() {
   cvApply(); cvDrawEdges(); cvEmptyUpd();
   cvHydrateRefs();
   for (const n of cv.nodes) {
+    const media = n.kind === "image" || n.kind === "video";
     const needsImg = n.kind === "image" && !n.dataUrl && n.galleryId;
     const needsVid = n.kind === "video" && !n.src && n.galleryId;
-    if (!needsImg && !needsVid) continue;
+    // v68: nodes made before provenance existed can recover their credit from the gallery
+    // entry, so old boards fill in rather than sitting blank forever.
+    const needsGen = media && !n.gen && n.galleryId;
+    if (!needsImg && !needsVid && !needsGen) continue;
     api("/api/gallery?id=" + encodeURIComponent(n.galleryId))
       .then((it) => {
-        if (n.kind === "image") n.dataUrl = it.dataUrl || it.url || "";
-        else n.src = it.url || it.dataUrl || "";
+        if (needsImg) n.dataUrl = it.dataUrl || it.url || "";
+        else if (needsVid) n.src = it.url || it.dataUrl || "";
+        if (!n.gen) {
+          const g = genFrom(it.provider || "", (it.meta && it.meta.model) || "");
+          if (g && genCredit(g)) { n.gen = g; cvSave(); }
+        }
         cvRebuildNode(n);
       })
       .catch(() => { const el = cvEls[n.id]; if (el) { const w = el.querySelector(".cvimgwrap"); if (w) w.innerHTML = '<div class="cvmissing">missing — deleted from gallery?</div>'; } });

@@ -30,7 +30,10 @@ export async function onRequestGet(context) {
   if (id) {
     const item = await getMedia(context.env, user, id);
     if (!item) return json({ error: "not found" }, 404);
-    return json({ ok: true, id, ...item });
+    // v68: the blob key holds only dataUrl/url — provider + model live on the index entry.
+    // Merge them in so a board node rehydrating from the gallery recovers its credit line.
+    const entry = (await loadIndex(context.env, user)).find((e) => e.id === id) || {};
+    return json({ ok: true, id, ...item, provider: entry.provider || null, meta: entry.meta || {}, type: entry.type || null });
   }
   return json({ ok: true, media: await loadIndex(context.env, user), folders: await loadFolders(context.env, user) });
 }
