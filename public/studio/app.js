@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 65; // v65: bind reference media to the prompt (@Image1/@Video1/@Audio1) — unnamed refs were ignored
+const BUILD = 66; // v66: readable type scale + text-size control; all API models unlocked behind a confirm
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -114,6 +114,21 @@ function initTheme() {
   for (const t of THEMES) { const o = document.createElement("option"); o.value = t; o.textContent = t.toUpperCase(); sel.appendChild(o); }
   const saved = localStorage.getItem("plx-theme") || "midnight"; sel.value = saved; document.body.dataset.theme = saved;
   sel.onchange = () => { document.body.dataset.theme = sel.value; localStorage.setItem("plx-theme", sel.value); };
+  initTextSize();
+}
+/* v66: the UI was authored at 8–12px, which read as "hard to see" long before the palette
+   did. Every font-size is now one of eight --f* tokens, so the whole app scales from here. */
+const TEXT_SIZES = [["compact", "Compact"], ["", "Default"], ["roomy", "Roomy"], ["large", "Large"]];
+function applyTextSize(v) {
+  if (v) document.body.dataset.fs = v; else delete document.body.dataset.fs;
+}
+function initTextSize() {
+  const sel = $("fsSel"); if (!sel) return;
+  sel.innerHTML = "";
+  for (const [v, label] of TEXT_SIZES) { const o = document.createElement("option"); o.value = v; o.textContent = label; sel.appendChild(o); }
+  const saved = localStorage.getItem("plx-fs") || "";
+  sel.value = saved; applyTextSize(saved);
+  sel.onchange = () => { applyTextSize(sel.value); localStorage.setItem("plx-fs", sel.value); };
 }
 // Estimated $ per 1M tokens by model family. Anthropic/OpenAI don't expose a remaining
 // balance to API keys, so Claude+GPT show est. SPEND (this session); Venice shows real
@@ -223,7 +238,8 @@ function renderStatus(providers) {
     let cls = "o", tip = "not connected";
     if (p && p.connected && p.live) { cls = "g"; tip = "live" + (p.usd != null ? ` · $${Number(p.usd).toFixed(2)}` : ""); }
     else if (p && p.connected) { cls = "r"; tip = "down" + (p.note ? " · " + p.note : ""); }
-    return `<span class="ps" title="${esc(PROV_LABELS[k])}: ${esc(tip)}"><span class="dot ${cls}"></span>${PROV_LABELS[k]}</span>`;
+    // the word is wrapped so a tight top bar can drop it and keep the dot (v66)
+    return `<span class="ps" title="${esc(PROV_LABELS[k])}: ${esc(tip)}"><span class="dot ${cls}"></span><i>${PROV_LABELS[k]}</i></span>`;
   }).join("");
   // Sync ArtCraft/Venice meter state from the same probe.
   if (providers) {
@@ -391,7 +407,7 @@ async function newMusicVideo() {
 
     const step1 = { id: cvId(), kind: "text", x: 60, y: 60, w: 360, skills: have.slice(),
       text: "STEP 1 — THE SONG\nDescribe the track you want (genre, mood, BPM, length) and press Ask. You'll get a Suno prompt back. Make the song in Suno, then bring the mp3 back here." };
-    const step2 = { id: cvId(), kind: "prompt", out: "image", x: 470, y: 60, w: 320, aspect: "16:9", iq: "medium", parentId: step1.id, skills: have.slice(),
+    const step2 = { id: cvId(), kind: "prompt", out: "image", x: 470, y: 60, w: 372, aspect: "16:9", iq: "medium", parentId: step1.id, skills: have.slice(),
       text: "STEP 2 — THE KEY VISUAL: describe your character / world here, then Generate." };
     const step3 = { id: cvId(), kind: "text", x: 870, y: 60, w: 360, skills: [],
       text: "STEP 3 — ANIMATE IT TO THE MUSIC\nHover your generated image, drag the ＋ handle off it and pick Video generator.\nOn that node, drop your song into the 🎵 MUSIC box — if it's longer than 15s you can slide to pick which part to use.\nGenerate, then hover the finished clip and press ⏭ continue to chain the next shot (leave music off those so they stay seamless)." };
@@ -1305,7 +1321,7 @@ function cvAddNodeEl(n) {
   const el = document.createElement("div");
   el.className = "cvnode " + n.kind; el.dataset.id = n.id;
   el.style.left = n.x + "px"; el.style.top = n.y + "px";
-  el.style.width = (n.w || { image: 280, video: 300, prompt: 320, text: 340 }[n.kind] || 300) + "px";
+  el.style.width = (n.w || { image: 300, video: 320, prompt: 372, text: 380 }[n.kind] || 320) + "px";
   if (n.kind === "image") {
     el.innerHTML = `<div class="cvimgwrap">${n.dataUrl ? `<img src="${n.dataUrl}" draggable="false">` : `<div class="cvmissing">loading…</div>`}</div>
       <button class="cvchat corner" title="send this image — and anything linked to it — to the Dual Mind chat">💬</button>
@@ -1334,13 +1350,12 @@ function cvAddNodeEl(n) {
   } else {
     const out = n.out || "image";
     const vprov = n.vprov || "venice";
-    const iprov = "openai";   // v60: images are OpenAI-only (Venice/ArtCraft = video credits)
-    if (n.iprov && n.iprov !== "openai") { n.iprov = "openai"; cvSave(); }   // heal boards saved before v60
-    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span><span class="cvbeat hide" title="a music reference is attached — Seedance will time this clip to it">🎵 beat-synced</span>` : `<span class="cvapi oa" title="image generation runs on OpenAI only">OPENAI API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
+    const iprov = n.iprov || "openai";   // v66: any API is selectable; Generate confirms which one
+    el.innerHTML = `<div class="cvphead">PROMPT${out === "video" ? `<span class="cvapi ${vprov === "artcraft" ? "ac" : "vn"}" title="the API this node renders on">${vprov.toUpperCase()} API</span><span class="cvbeat hide" title="a music reference is attached — Seedance will time this clip to it">🎵 beat-synced</span>` : `<span class="cvapi ${iprov === "venice" ? "vn" : iprov === "artcraft" ? "ac" : "oa"}" title="the API this node renders on">${iprov === "openai" ? "OPENAI" : iprov.toUpperCase()} API</span>`}<span class="sp"></span><select class="cvout" title="what this node generates"><option value="image" ${out === "image" ? "selected" : ""}>🖼 Image</option><option value="video" ${out === "video" ? "selected" : ""}>🎬 Video</option></select><button class="cvx" title="remove">✕</button></div>
       <textarea class="cvtext" placeholder="${out === "video" ? "describe the motion / scene…  e.g. 'slow push-in, she turns and smiles, rain starts'" : "recreate / edit / change…  e.g. 'make it golden hour' or 'same character, side profile'"}">${esc(n.text || "")}</textarea>
       <div class="cvctl">
-        ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<span class="cvfixed" title="image generation runs on OpenAI GPT Image only — Venice and ArtCraft credits are reserved for video">OpenAI · GPT Image</span>`}
-        <select class="cvrmodel" title="${out === "video" ? "Seedance workflow — Auto picks the right variant from what you connect (image ⇒ reference/first-frame, none ⇒ text-to-video)" : "image model"}"><option value="">${out === "video" ? "Auto — match my refs" : "gpt-image-2 (default)"}</option></select>
+        ${out === "video" ? `<select class="cvvprov" title="which video API renders this clip — Venice or ArtCraft"></select>` : `<select class="cviprov" title="which image API renders this — each draws on that provider's credits"></select>`}
+        <select class="cvrmodel" title="${out === "video" ? "Seedance workflow — Auto picks the right variant from what you connect (image ⇒ reference/first-frame, none ⇒ text-to-video)" : "image model"}"><option value="">${out === "video" ? "Auto — match my refs" : (iprov === "openai" ? "gpt-image-2 (default)" : "default model")}</option></select>
       </div>
       <div class="cvrow">${out === "image"
         ? `<select class="cvcount" title="how many variations">${["1", "2", "3", "4"].map((c) => `<option value="${c}" ${c === (n.count || "1") ? "selected" : ""}>×${c}</option>`).join("")}</select>
@@ -1369,6 +1384,13 @@ function cvAddNodeEl(n) {
     ta.oninput = () => { n.text = ta.value; clearTimeout(el._t); el._t = setTimeout(cvSave, 500); };
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cvGenerate(n.id); } };
     el.querySelector(".cvout").onchange = (e) => { n.out = e.target.value; n.rmodel = null; cvSave(); cvRebuildNode(n); };
+    const pi = el.querySelector(".cviprov");
+    if (pi) {
+      const acState = artcraftState === "connected" ? "" : (artcraftState === "blocked" ? " · parked" : " · not connected");
+      pi.innerHTML = `<option value="openai">OpenAI · GPT Image</option><option value="venice">Venice API</option><option value="artcraft">ArtCraft API${acState}</option>`;
+      pi.value = iprov;
+      pi.onchange = () => { n.iprov = pi.value; n.rmodel = null; cvSave(); cvRebuildNode(n); };
+    }
     const pv = el.querySelector(".cvvprov");
     if (pv) {
       const acState = artcraftState === "connected" ? "" : (artcraftState === "blocked" ? " · parked" : " · not connected");
@@ -1379,7 +1401,7 @@ function cvAddNodeEl(n) {
     const qs = el.querySelector(".cvquality");
     if (qs) qs.onchange = () => { n.iq = qs.value; cvSave(); };
     const rm = el.querySelector(".cvrmodel");
-    cvRenderModels(out === "video" ? vprov : "gpt", out).then((models) => {
+    cvRenderModels(out === "video" ? vprov : (iprov === "openai" ? "gpt" : iprov), out).then((models) => {
       for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.label || m.id; rm.appendChild(o); }
       if (n.rmodel) rm.value = n.rmodel;
     });
@@ -1769,7 +1791,7 @@ async function cvContinueClip(nid) {
     // (ArtCraft has no first-frame upload path yet, so continuation runs on Venice)
     const wasAC = madeBy && madeBy.vprov === "artcraft";
     const next = {
-      id: cvId(), kind: "prompt", out: "video", w: 320,
+      id: cvId(), kind: "prompt", out: "video", w: 372,
       x: img.x + 320 + 90, y: img.y - 20, parentId: img.id, text: "",
       skills: (n.skills || []).slice(),
       vprov: "venice", rmodel: "seedance-2-0-image-to-video",
@@ -2112,8 +2134,67 @@ async function cvWritePromptFor(n, src, prov, pmodel) {
     : wrap;
   return cvStream(prov, pmodel, [{ role: "user", content }]);
 }
+/* v66: every API is selectable again (v60 had locked images to OpenAI after Venice
+   renders quietly ate Seedance credits). The safeguard now lives here instead of in a
+   lockout: nothing is charged until the operator sees WHICH API and model is about to
+   run. Enter approves, Esc cancels. */
+const PROV_META = {
+  openai:   { tag: "oa", name: "OpenAI",   credits: "your OpenAI credits" },
+  venice:   { tag: "vn", name: "Venice",   credits: "your Venice balance — the same pool Seedance video draws on" },
+  artcraft: { tag: "ac", name: "ArtCraft", credits: "your ArtCraft credits" },
+};
+let genSkipSession = false;
+function cvConfirmGen(n) {
+  const out = n.out || "image";
+  const prov = out === "video" ? (n.vprov || "venice") : (n.iprov || "openai");
+  const meta = PROV_META[prov] || PROV_META.openai;
+  if (genSkipSession) return Promise.resolve(true);
+  const modal = $("genModal"); if (!modal) return Promise.resolve(true);
+
+  const modelSel = cvEls[n.id] && cvEls[n.id].querySelector(".cvrmodel");
+  const modelLabel = modelSel && modelSel.selectedOptions[0] ? modelSel.selectedOptions[0].textContent : "default";
+  const refs = n.refs || {};
+  const nImg = (refs.imgs || []).filter((r) => r.dataUrl).length;
+  const nAud = (refs.aud || []).filter((r) => r.dataUrl).length;
+  const rows = [
+    ["makes", out === "video"
+      ? `1 clip · ${n.dur || "5s"} · ${n.res || "720p"} · ${n.aspect || "16:9"}`
+      : `${n.count || "1"} image${(n.count || "1") === "1" ? "" : "s"} · ${n.aspect || "1:1"} · ${n.iq || "medium"} quality`],
+    ["model", modelLabel],
+  ];
+  if (nImg || nAud) rows.push(["references", [nImg ? nImg + " image" + (nImg > 1 ? "s" : "") : "", nAud ? nAud + " music clip" + (nAud > 1 ? "s" : "") : ""].filter(Boolean).join(" · ")]);
+  if ((n.text || "").trim()) rows.push(["your prompt", (n.text || "").trim().slice(0, 180)]);
+
+  $("genApi").className = "gen-api " + meta.tag;
+  $("genApi").innerHTML = `<span class="tag">${esc(prov.toUpperCase())} API</span><span>${esc(meta.name)}</span>`;
+  $("genRows").innerHTML = rows.map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span>`).join("");
+  $("genCost").innerHTML = `This draws on <b>${esc(meta.credits)}</b>.`;
+  $("genSkip").checked = false;
+  modal.classList.remove("hide");
+  $("genOk").focus();
+
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      modal.classList.add("hide");
+      document.removeEventListener("keydown", key, true);
+      if (ok && $("genSkip").checked) genSkipSession = true;
+      resolve(ok);
+    };
+    const key = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      else if (e.key === "Enter") { e.preventDefault(); done(true); }
+    };
+    document.addEventListener("keydown", key, true);
+    $("genOk").onclick = () => done(true);
+    $("genCancel").onclick = () => done(false);
+    $("genCancelX").onclick = () => done(false);
+    modal.onclick = (e) => { if (e.target === modal) done(false); };
+  });
+}
+
 async function cvGenerate(nid) {
   const n = cvNode(nid); if (!n || n.busy) return;
+  if (!(await cvConfirmGen(n))) return;
   const el = cvEls[nid], stat = el && el.querySelector(".cvstat"), btn = el && el.querySelector(".cvgen");
   const text = (n.text || "").trim();
   const out = n.out || "image";
@@ -2136,8 +2217,8 @@ async function cvGenerate(nid) {
       // the serverless window (the old single ×N request was what hit platform 502s).
       const count = Math.max(1, Math.min(4, Number(n.count || "1") || 1));
       if (stat) stat.textContent = count > 1 ? `rendering ${count} in parallel…` : "rendering…";
-      // v60: images always render on OpenAI — Venice/ArtCraft credits are video-only.
-      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: "openai", model: n.rmodel || undefined, aspect_ratio: n.aspect || "1:1", variants: "1", quality: n.iq || "medium" } };
+      // v66: the node's chosen image API (confirmed by the operator before we got here).
+      const reqBase = { brief: text || "recreate the source image", prewritten: prompt, projectId: cvBoardProjectId() || undefined, options: { provider: n.iprov || "openai", model: n.rmodel || undefined, aspect_ratio: n.aspect || "1:1", variants: "1", quality: n.iq || "medium" } };
       const results = await Promise.allSettled(Array.from({ length: count }, () => api("/api/image", { ...reqBase, options: { ...reqBase.options } })));
       let ok = 0, lastErr = null, bal = null;
       results.forEach((res, i) => {
@@ -2155,7 +2236,8 @@ async function cvGenerate(nid) {
       if (bal != null) cvCost(bal);
       // GPT-image renders have no live balance header — count a close per-quality
       // estimate into the meters so Space usage is never invisible money.
-      if (ok) {
+      // Venice/ArtCraft report a real balance in the response, so only estimate for OpenAI.
+      if (ok && (n.iprov || "openai") === "openai") {
         const OPENAI_IMG_EST = { low: 0.011, medium: 0.042, high: 0.167 };
         addFlatSpend("openai", (OPENAI_IMG_EST[n.iq || "medium"] || 0.042) * ok);
       }
