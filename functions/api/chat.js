@@ -210,9 +210,20 @@ function transformStream(upstreamBody, pick) {
   });
 }
 
+/* ALWAYS HTTP 200. This is GOTCHA #6 and it bit us here for real: Cloudflare Pages replaces
+   the body of a 4xx/5xx response with its own branded HTML error page, so every reason this
+   function ever gave — "Claude API 400: prompt is too long", "key not configured",
+   "Upstream error" — was thrown away before the browser could read it. The client parsed
+   zero SSE lines and rendered a blank lane with "(no output returned)".
+   The failure IS the payload here, so it has to travel in a 200. `x-plx-error` carries the
+   reason in a header too, for anyone reading the network tab. */
 function sse_error(msg, status) {
-  return new Response(`data: ${JSON.stringify({ error: msg })}\n\ndata: [DONE]\n\n`, {
-    status,
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+  return new Response(`data: ${JSON.stringify({ error: msg, status })}\n\ndata: [DONE]\n\n`, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "x-plx-error": String(status || ""),
+    },
   });
 }

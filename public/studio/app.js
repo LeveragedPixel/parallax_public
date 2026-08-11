@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 68; // v68: every render credited "API · Model" on the board, gallery tiles and lightbox
+const BUILD = 69; // v69: chat errors were replaced by Cloudflare HTML (5xx) — the blank Claude lane
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -661,10 +661,29 @@ async function streamCol(provider, model, id, streamEl, extraUser) {
     return { role: t.who === "user" ? "user" : "assistant", content: t.text };
   });
   if (extraUser) messages.push({ role: "user", content: extraUser });
-  const payload = { provider, model, messages };
+  // A failed turn stores no assistant reply (see the tail of this function), so the NEXT send
+  // would carry two user messages in a row — which Anthropic rejects outright. That is why one
+  // blank answer used to be followed by a second: failure #1 poisoned the thread. Merge runs of
+  // the same role so a retry is always a valid conversation.
+  const merged = [];
+  for (const m of messages) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === m.role && typeof prev.content === "string" && typeof m.content === "string") prev.content += "\n\n" + m.content;
+    else merged.push({ ...m });
+  }
+  const payload = { provider, model, messages: merged };
   const pid = threadProjectId(id); if (pid) payload.projectId = pid;   // project context, not the thread id
   let res; try { res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) }); }
-  catch (e) { w.className = "msg err"; bub.textContent = "⚠ network error: " + e; return; }
+  catch (e) { w.className = "msg " + provider + " err"; bub.textContent = "⚠ network error: " + e; return; }
+  // If the platform (not our function) killed the request, the body is an HTML error page —
+  // no SSE lines at all. Say what actually happened instead of "(no output returned)".
+  const ctype = res.headers.get("content-type") || "";
+  if (!/event-stream/i.test(ctype)) {
+    let body = ""; try { body = (await res.text()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); } catch {}
+    w.className = "msg " + provider + " err";
+    bub.textContent = `⚠ HTTP ${res.status} — the request never reached the model. ${body.slice(0, 220) || "(empty response)"}`;
+    return;
+  }
   const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", errored = false;
   while (true) {
     const { done, value } = await reader.read(); if (done) break;
@@ -674,10 +693,14 @@ async function streamCol(provider, model, id, streamEl, extraUser) {
       let evt; try { evt = JSON.parse(data); } catch { continue; }
       if (evt.delta) { const atB = chatAtBottom(); bub.textContent += evt.delta; chatStick(atB); }
       else if (evt.usage) { addSpend(model, evt.usage.input || 0, evt.usage.output || 0); }
-      else if (evt.error) { errored = true; w.className = "msg err"; bub.textContent = "⚠ " + evt.error; }
+      else if (evt.error) { errored = true; w.className = "msg " + provider + " err"; bub.textContent = "⚠ " + evt.error; }
     }
   }
-  if (!errored && !bub.textContent) { w.className = "msg err"; bub.textContent = "⚠ (no output returned)"; }
+  if (!errored && !bub.textContent) {
+    w.className = "msg " + provider + " err";
+    // Still say something diagnosable — a truly empty 200 stream is rare but shouldn't be mute.
+    bub.textContent = `⚠ the model returned no text (HTTP ${res.status}${res.headers.get("x-plx-error") ? ", upstream " + res.headers.get("x-plx-error") : ""}). Try again, or start a new thread if this one has grown very long.`;
+  }
   if (!errored && bub.textContent) colConvos[id].push({ who: provider, text: bub.textContent });
   w.querySelector(".copybtn").onclick = () => copyText(bub.textContent);
 }
@@ -2095,6 +2118,12 @@ async function cvStream(provider, model, messages, onDelta) {
   const payload = { provider, model, messages };
   const pid = cvBoardProjectId(); if (pid) payload.projectId = pid;
   const res = await fetch("/api/chat", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) });
+  // Same guard as the chat lanes: a platform-level failure returns HTML, not SSE, and would
+  // otherwise surface as a silent empty string.
+  if (!/event-stream/i.test(res.headers.get("content-type") || "")) {
+    let body = ""; try { body = (await res.text()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); } catch {}
+    throw new Error(`HTTP ${res.status} — the request never reached the model. ${body.slice(0, 180)}`);
+  }
   const reader = res.body.getReader(), dec = new TextDecoder(); let buf = "", text = "", err = null;
   while (true) {
     const { done, value } = await reader.read(); if (done) break;
