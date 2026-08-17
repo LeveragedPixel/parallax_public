@@ -523,6 +523,7 @@ body[data-screen="upload"] #uploadView{display:flex}
 .up-steps{margin:0 0 12px;padding-left:20px;font-size:var(--f2);color:var(--dim);line-height:1.7}
 .up-steps li{margin:2px 0}
 .up-steps a{color:var(--pri-hi)}
+.up-warn{color:var(--red)}
 .up-folders{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .up-folder{appearance:none;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);
   border-radius:999px;padding:6px 13px;font:inherit;font-size:var(--f2);cursor:pointer}
@@ -713,15 +714,21 @@ body[data-screen="upload"] #uploadView{display:flex}
 
         <div class="up-step" id="upStep1">
           <h3><span class="n">1</span> Connect Google Drive</h3>
-          <p>One-time setup, about five minutes. You need an OAuth <b>Client ID</b> — it is not the
-            folder link, and not the client secret.</p>
+          <p>One-time setup, about five minutes. You need an OAuth <b>Client ID</b>.
+            <b class="up-warn">Not an API key</b>, not the client secret, not the folder link —
+            an API key cannot read a private Drive, so it will never work here.</p>
           <ol class="up-steps">
             <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → Credentials</a> (create a project if you have none).</li>
             <li>Enable the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a> for that project.</li>
-            <li><b>Create Credentials → OAuth client ID → Web application</b>.</li>
+            <li>Fill in <a href="https://console.cloud.google.com/auth/branding" target="_blank" rel="noopener">Branding</a> (app name + your email). Google won't let you create a client without it.</li>
+            <li>Under <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener">Audience</a>, add your own Google address as a <b>Test user</b> — otherwise sign-in returns <code>access_denied</code>.</li>
+            <li>Back in Credentials: <b>Create Credentials → OAuth client ID → Web application</b>
+              <span class="up-warn">(not "API key")</span>.</li>
             <li>Under <b>Authorised JavaScript origins</b> add <code id="upOrigin"></code>.</li>
             <li>Copy the <b>Client ID</b> — it ends in <code>.apps.googleusercontent.com</code> — and paste it below.</li>
           </ol>
+          <div class="up-note">First connection shows "Google hasn't verified this app" — that's expected
+            for your own private client. Choose <b>Advanced → Go to Leveraged Pixel (unsafe)</b>.</div>
           <div class="up-row">
             <input type="text" id="upClientId" placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com" spellcheck="false">
             <button class="tbtn" id="upSaveId">Save</button>
@@ -904,6 +911,6 @@ body[data-screen="upload"] #uploadView{display:flex}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=73"></script>
+<script src="app.js?v=74"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 73; // v73: validate the Drive Client ID here instead of bouncing to a Google error page
+const BUILD = 74; // v74: name an API key for what it is, and add the OAuth steps that were missing
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -2664,10 +2664,16 @@ function clientIdProblem(v) {
   if (!id) return "paste your OAuth Client ID above, then press Save";
   if (/drive\.google\.com|\/folders\//i.test(id))
     return "that's a Drive FOLDER LINK, not a Client ID — it belongs in step 2. Step 1 wants the OAuth Client ID from Google Cloud Console.";
-  if (/^[A-Za-z0-9_-]{20,60}$/.test(id) && !id.includes("."))
-    return "that looks like a folder/file ID, not a Client ID. A Client ID ends in .apps.googleusercontent.com";
+  // The single most common wrong turn: Google Cloud offers "API key" as the first and easiest
+  // option under Create Credentials, but an API key cannot authorise a user's private Drive.
+  if (/^AIza[0-9A-Za-z_-]{10,}$/.test(id))
+    return "that's an API KEY (AIza…), not an OAuth Client ID. An API key can't read your private Drive. Go back to Credentials → Create Credentials → OAuth client ID → Web application. (Delete that API key too — it's now been on screen.)";
   if (/^GOCSPX-/i.test(id))
     return "that's the client SECRET — never paste that here. Use the Client ID (ends in .apps.googleusercontent.com).";
+  if (/^\{|"type"\s*:\s*"service_account"/.test(id))
+    return "that's a service-account JSON key. Service accounts can't access your personal Drive — you need a Web application OAuth client ID.";
+  if (/^[A-Za-z0-9_-]{20,60}$/.test(id) && !id.includes("."))
+    return "that looks like a folder/file ID, not a Client ID. A Client ID ends in .apps.googleusercontent.com";
   if (!CLIENT_ID_RE.test(id))
     return "that doesn't look like a Client ID. It should read like 000000000000-abc123.apps.googleusercontent.com";
   return "";
@@ -2703,6 +2709,7 @@ async function gdConnect() {
       if (/popup_closed/i.test(t)) upSetConn("sign-in window closed before finishing — press Connect Drive again", false);
       else if (/popup_failed|popup_blocked/i.test(t)) upSetConn("your browser blocked the Google popup — allow popups for this site and retry", false);
       else if (/idpiframe|origin/i.test(t)) upSetConn("⚠ this site isn't in the client's Authorised JavaScript origins — add " + location.origin + " in Google Cloud Console", false);
+      else if (/access_denied/i.test(t)) upSetConn("⚠ Google refused the account. If the app is in Testing, add your Google address under Audience → Test users.", false);
       else upSetConn("sign-in failed: " + t, false);
     },
   });
