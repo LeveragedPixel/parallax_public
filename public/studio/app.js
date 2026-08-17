@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 70; // v70: public art portfolio — browser-downscaled publishing from the gallery
+const BUILD = 71; // v71: AI Art portfolio — series taxonomy on publish and on the public page
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -981,10 +981,22 @@ async function downscaleForWeb(src, edge = PORTFOLIO_EDGE, q = PORTFOLIO_Q) {
   // JPEG on purpose: re-encoding strips metadata, and there is no alpha to preserve here.
   return { dataUrl: c.toDataURL("image/jpeg", q), w, h, fromW: iw, fromH: ih };
 }
+// The series the archive is actually organised into — offered as suggestions so published
+// work lands filterable instead of as an untagged pile (which is what v70 produced).
+const PORTFOLIO_SERIES = ["Cyberpunk", "Custom Cards", "Waifu Cards", "Manawa Cards", "Impact",
+  "Drip", "Monochrome", "Manga", "Glamour", "Ghost Fighting Spirit", "Fullmetal",
+  "AI Bands", "AI Creators", "Persona", "Character Sheets"];
 async function publishSelection(btn) {
   const picks = Object.values(galSel).filter((x) => x.type !== "video");
   const skipped = Object.values(galSel).length - picks.length;
   if (!picks.length) { toast(skipped ? "video isn't supported in the portfolio yet — pick images" : "select some images first"); return; }
+  // Default to the gallery folder these came from, if they all share one — it's usually
+  // already the series name, so the common case is just pressing Enter.
+  const folders = [...new Set(picks.map((p) => { const m = galMedia.find((x) => x.id === p.id); return (m && m.folder) || ""; }))];
+  const guess = folders.length === 1 && folders[0]
+    ? (galFolders.find((f) => f.id === folders[0]) || {}).name || "" : "";
+  const series = (prompt(`Series for these ${picks.length} piece${picks.length > 1 ? "s" : ""}?\n\n` +
+    `Known series: ${PORTFOLIO_SERIES.join(", ")}\n\n(leave blank for none)`, guess) || "").trim();
   const label = btn.textContent; btn.disabled = true;
   let ok = 0, fail = 0;
   for (let i = 0; i < picks.length; i++) {
@@ -998,7 +1010,7 @@ async function publishSelection(btn) {
       await api("/api/portfolio", {
         dataUrl: shrunk.dataUrl, w: shrunk.w, h: shrunk.h,
         title: (meta.prompt || "").slice(0, 80) || "Untitled",
-        tags: [], sourceId: picks[i].id,
+        tags: series ? [series] : [], sourceId: picks[i].id,
         provider: meta.provider || null, model: (meta.meta && meta.meta.model) || null,
       });
       ok++;
