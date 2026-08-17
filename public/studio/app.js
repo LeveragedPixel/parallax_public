@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 71; // v71: AI Art portfolio — series taxonomy on publish and on the public page
+const BUILD = 72; // v72: Gallery Upload screen — Drive → downscale here → publish, with an 18+ gate
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -291,12 +291,14 @@ function renderChatAtts() {
 }
 /* Two full-screen workspaces. Exactly one owns the window; the choice is remembered. */
 function setScreen(name) {
-  const s = name === "chat" ? "chat" : "board";
+  const s = name === "chat" ? "chat" : name === "upload" ? "upload" : "board";
   document.body.dataset.screen = s;
   $("scrChat").classList.toggle("on", s === "chat");
   $("scrBoard").classList.toggle("on", s === "board");
+  const su = $("scrUpload"); if (su) su.classList.toggle("on", s === "upload");
   try { localStorage.setItem("plx-screen", s); } catch {}
   if (s === "board") renderSpace();
+  else if (s === "upload") { cvAudio.stop(); upInit(); }
   else { cvAudio.stop(); chatScrollBottom(); const ta = $("chatText"); if (ta) ta.focus(); }
 }
 /* Auto-scroll rule: only stick to the bottom when the reader is ALREADY there.
@@ -2617,6 +2619,220 @@ $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 $("logoutBtn").onclick = logout;
 $("scrChat").onclick = () => setScreen("chat");
 $("scrBoard").onclick = () => setScreen("board");
+if ($("scrUpload")) $("scrUpload").onclick = () => setScreen("upload");
+
+/* ================= v72 — GALLERY UPLOAD ====================================================
+   Pull finished art straight from Google Drive, downscale it IN THIS TAB, publish the small
+   copy. The full-size file goes Drive → browser → canvas and stops there: it never reaches
+   Parallax's server, so the portfolio physically cannot leak a print-resolution master.
+
+   Auth is Google Identity Services with a read-only Drive scope. The OAuth client ID is not a
+   secret (it's public by design), so it lives in localStorage rather than the key vault. The
+   access token is kept in memory only — closing the tab drops it. ------------------------- */
+const GD = {
+  CLIENT_KEY: "plx-gdrive-client",
+  ROOT_KEY: "plx-gdrive-root",
+  DEFAULT_ROOT: "1TS1nDFXN7ALVwBk51c04A03t-uEH06gO",   // the "output" folder
+  SCOPE: "https://www.googleapis.com/auth/drive.readonly",
+  token: null, tokenClient: null, gisReady: false,
+};
+let upFolders = [], upFiles = [], upSel = {}, upNsfwSel = {}, upBusy = false, upInited = false;
+
+function upSetConn(msg, ok) {
+  const el = $("upConnState"); if (!el) return;
+  el.textContent = msg;
+  el.style.color = ok ? "var(--sec)" : "var(--faint)";
+  $("upStep1").classList.toggle("done", !!ok);
+}
+function loadGis() {
+  if (GD.gisReady) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const sc = document.createElement("script");
+    sc.src = "https://accounts.google.com/gsi/client";
+    sc.async = true; sc.defer = true;
+    sc.onload = () => { GD.gisReady = true; resolve(true); };
+    sc.onerror = () => resolve(false);
+    document.head.appendChild(sc);
+  });
+}
+async function gdConnect() {
+  const id = (localStorage.getItem(GD.CLIENT_KEY) || "").trim();
+  if (!id) { upSetConn("add a Client ID first", false); toast("paste your Google OAuth Client ID and Save"); return; }
+  upSetConn("loading Google…", false);
+  if (!(await loadGis()) || !window.google?.accounts?.oauth2) {
+    upSetConn("couldn't load Google's sign-in script — check your connection or an ad blocker", false);
+    return;
+  }
+  GD.tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: id, scope: GD.SCOPE,
+    callback: (res) => {
+      if (res && res.access_token) {
+        GD.token = res.access_token;
+        upSetConn("connected ✓", true);
+        gdLoadFolders();
+      } else {
+        upSetConn("Google didn't return a token" + (res && res.error ? " — " + res.error : ""), false);
+      }
+    },
+    error_callback: (e) => upSetConn("sign-in failed: " + ((e && (e.type || e.message)) || "cancelled"), false),
+  });
+  GD.tokenClient.requestAccessToken({ prompt: GD.token ? "" : "consent" });
+}
+// Every Drive call funnels through here so an expired token gives a clear instruction rather
+// than an empty grid.
+async function gdApi(path) {
+  if (!GD.token) throw new Error("not connected to Drive");
+  const r = await fetch("https://www.googleapis.com/drive/v3/" + path, {
+    headers: { Authorization: "Bearer " + GD.token },
+  });
+  if (r.status === 401 || r.status === 403) { GD.token = null; upSetConn("session expired — press Connect Drive again", false); throw new Error("Drive session expired"); }
+  if (!r.ok) throw new Error("Drive " + r.status + ": " + (await r.text()).slice(0, 160));
+  return r.json();
+}
+const gdQ = (q, extra = "") =>
+  "files?q=" + encodeURIComponent(q) + "&pageSize=200&fields=files(id,name,mimeType,size,imageMediaMetadata(width,height))&orderBy=name" + extra;
+
+async function gdLoadFolders() {
+  const root = ($("upRootId").value || "").trim() || GD.DEFAULT_ROOT;
+  localStorage.setItem(GD.ROOT_KEY, root);
+  const box = $("upFolders"); box.innerHTML = '<span class="up-note">loading…</span>';
+  try {
+    const d = await gdApi(gdQ(`'${root}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`));
+    upFolders = d.files || [];
+    // the root itself is a valid choice — loose files often live there
+    box.innerHTML = "";
+    const mk = (id, name) => {
+      const b = document.createElement("button");
+      b.className = "up-folder"; b.dataset.id = id; b.textContent = name;
+      b.onclick = () => { [...box.children].forEach((c) => c.classList.toggle("on", c === b)); gdLoadFiles(id); };
+      box.appendChild(b);
+    };
+    mk(root, "⌂ output (root)");
+    upFolders.forEach((f) => mk(f.id, f.name));
+    if (!upFolders.length) box.innerHTML += '<span class="up-note">no sub-folders found</span>';
+    $("upStep2").classList.add("done");
+  } catch (e) { box.innerHTML = '<span class="up-note">⚠ ' + esc(String(e.message || e)) + "</span>"; }
+}
+
+async function gdLoadFiles(folderId) {
+  const grid = $("upGrid");
+  grid.innerHTML = '<div class="up-empty">loading…</div>';
+  upSel = {}; upNsfwSel = {}; upBarUpd();
+  try {
+    const d = await gdApi(gdQ(`'${folderId}' in parents and mimeType contains 'image/' and trashed = false`));
+    upFiles = d.files || [];
+    if (!upFiles.length) { grid.innerHTML = '<div class="up-empty">no images in this folder</div>'; return; }
+    grid.innerHTML = "";
+    upFiles.forEach((f, i) => {
+      const t = document.createElement("div");
+      t.className = "up-tile"; t.dataset.i = i;
+      const mb = f.size ? (Number(f.size) / 1e6).toFixed(1) + " MB" : "";
+      const dim = f.imageMediaMetadata ? f.imageMediaMetadata.width + "×" + f.imageMediaMetadata.height : "";
+      t.innerHTML = `<img alt="" loading="lazy" src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.id)}&sz=w320">
+        <span class="pick"></span><span class="nm">${esc(f.name)}${dim || mb ? " · " + esc([dim, mb].filter(Boolean).join(" · ")) : ""}</span>`;
+      t.onclick = () => {
+        if (upSel[f.id]) { delete upSel[f.id]; delete upNsfwSel[f.id]; } else upSel[f.id] = f;
+        t.classList.toggle("sel", !!upSel[f.id]);
+        if (!upSel[f.id]) { t.classList.remove("isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); }
+        upBarUpd();
+      };
+      grid.appendChild(t);
+    });
+    $("upStep3").classList.add("done");
+  } catch (e) { grid.innerHTML = '<div class="up-empty">⚠ ' + esc(String(e.message || e)) + "</div>"; }
+}
+
+function upBarUpd() {
+  const ids = Object.keys(upSel), n = ids.length;
+  $("upBar").style.display = n ? "flex" : "none";
+  const nsfw = ids.filter((id) => upNsfwSel[id]).length;
+  $("upCount").innerHTML = `<b>${n}</b> selected` + (nsfw ? ` · <span style="color:var(--red)">${nsfw} marked 18+</span>` : "");
+}
+function upMarkNsfw() {
+  const ids = Object.keys(upSel); if (!ids.length) return;
+  const allOn = ids.every((id) => upNsfwSel[id]);
+  ids.forEach((id) => { if (allOn) delete upNsfwSel[id]; else upNsfwSel[id] = true; });
+  [...$("upGrid").children].forEach((t) => {
+    const f = upFiles[+t.dataset.i]; if (!f || !upSel[f.id]) return;
+    const on = !!upNsfwSel[f.id];
+    t.classList.toggle("isnsfw", on);
+    let b = t.querySelector(".nsfw");
+    if (on && !b) { b = document.createElement("span"); b.className = "nsfw"; b.textContent = "18+"; t.appendChild(b); }
+    if (!on && b) b.remove();
+  });
+  upBarUpd();
+}
+
+// Fetch the master, shrink it here, publish only the small copy.
+async function gdFetchDataUrl(fileId) {
+  const r = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?alt=media", {
+    headers: { Authorization: "Bearer " + GD.token },
+  });
+  if (!r.ok) throw new Error("download failed (" + r.status + ")");
+  const blob = await r.blob();
+  return await new Promise((res, rej) => {
+    const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob);
+  });
+}
+async function upPublish() {
+  if (upBusy) return;
+  const picks = Object.values(upSel);
+  if (!picks.length) return;
+  const series = ($("upSeries").value || "").trim();
+  upBusy = true;
+  const go = $("upGo"); go.disabled = true;
+  $("upProgWrap").style.display = "block";
+  let ok = 0, fail = 0;
+  for (let i = 0; i < picks.length; i++) {
+    const f = picks[i];
+    go.textContent = `publishing ${i + 1}/${picks.length}…`;
+    $("upProg").style.width = Math.round((i / picks.length) * 100) + "%";
+    try {
+      const master = await gdFetchDataUrl(f.id);
+      const small = await downscaleForWeb(master);          // 1400px / JPEG — same path as the gallery
+      await api("/api/portfolio", {
+        dataUrl: small.dataUrl, w: small.w, h: small.h,
+        title: f.name.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() || "Untitled",
+        tags: series ? [series] : [],
+        nsfw: !!upNsfwSel[f.id],
+        driveId: f.id,
+      });
+      ok++;
+    } catch (e) { fail++; console.warn("upload failed", f.name, e); }
+  }
+  $("upProg").style.width = "100%";
+  go.disabled = false; go.textContent = "⬆ Publish selected"; upBusy = false;
+  setTimeout(() => { $("upProgWrap").style.display = "none"; $("upProg").style.width = "0"; }, 900);
+  upSel = {}; upNsfwSel = {};
+  [...$("upGrid").children].forEach((t) => { t.classList.remove("sel", "isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); });
+  upBarUpd();
+  toast(`published ${ok} to the portfolio${fail ? ` · ${fail} failed` : ""}`);
+}
+
+function upInit() {
+  if (upInited) return; upInited = true;
+  $("upClientId").value = localStorage.getItem(GD.CLIENT_KEY) || "";
+  $("upRootId").value = localStorage.getItem(GD.ROOT_KEY) || GD.DEFAULT_ROOT;
+  upSetConn(GD.token ? "connected ✓" : (localStorage.getItem(GD.CLIENT_KEY) ? "not connected yet" : "no Client ID saved"), !!GD.token);
+  $("upSaveId").onclick = () => {
+    localStorage.setItem(GD.CLIENT_KEY, ($("upClientId").value || "").trim());
+    upSetConn("Client ID saved — press Connect Drive", false); toast("Client ID saved");
+  };
+  $("upConnect").onclick = gdConnect;
+  $("upLoadFolders").onclick = gdLoadFolders;
+  $("upAll").onclick = () => {
+    upFiles.forEach((f) => { upSel[f.id] = f; });
+    [...$("upGrid").children].forEach((t) => t.classList.add("sel"));
+    upBarUpd();
+  };
+  $("upNone").onclick = () => {
+    upSel = {}; upNsfwSel = {};
+    [...$("upGrid").children].forEach((t) => { t.classList.remove("sel", "isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); });
+    upBarUpd();
+  };
+  $("upNsfw").onclick = upMarkNsfw;
+  $("upGo").onclick = upPublish;
+}
 $("chatToBoard").onclick = () => setScreen("board");
 $("chatTurns").addEventListener("scroll", chatJumpUpd, { passive: true });
 $("chatJump").onclick = chatScrollBottom;
