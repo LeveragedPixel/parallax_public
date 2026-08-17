@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 69; // v69: chat errors were replaced by Cloudflare HTML (5xx) — the blank Claude lane
+const BUILD = 70; // v70: public art portfolio — browser-downscaled publishing from the gallery
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -946,11 +946,67 @@ function updateGalBar() {
   mv.innerHTML = `<option value="">Move to…</option>` + galFolders.map((f) => `<option value="${esc(f.id)}">📁 ${esc(f.name)}</option>`).join("") + `<option value="__new">＋ New folder…</option><option value="__none">Unsorted</option>`;
   mv.onchange = () => moveSelectedTo(mv.value);
   bar.appendChild(mv);
-  const send = document.createElement("button"); send.className = "btn-solid"; send.style.cssText = "padding:5px 10px;font-size:11px;margin-left:auto"; send.textContent = "👁 SEND TO CLAUDE";
+  const pub = document.createElement("button"); pub.className = "tbtn"; pub.style.cssText = "padding:5px 10px;font-size:var(--f2);margin-left:auto";
+  pub.textContent = "🖼 PUBLISH TO PORTFOLIO";
+  pub.title = "downscale in the browser and publish to the public portfolio — the full-size file never leaves this machine";
+  pub.onclick = () => publishSelection(pub);
+  bar.appendChild(pub);
+  const send = document.createElement("button"); send.className = "btn-solid"; send.style.cssText = "padding:5px 10px;font-size:11px"; send.textContent = "👁 SEND TO CLAUDE";
   send.onclick = sendSelectionToClaude;
   const clr = document.createElement("button"); clr.className = "tbtn"; clr.style.cssText = "padding:5px 8px;font-size:11px"; clr.textContent = "clear";
   clr.onclick = () => { galSel = {}; renderGallery(); };
   bar.appendChild(send); bar.appendChild(clr);
+}
+
+/* ---- publishing to the public portfolio (v70) --------------------------------------------
+   The ONLY meaningful protection against someone lifting your work is that a full-resolution
+   file never reaches the server. So the downscale happens here, in the browser, before the
+   upload: longest edge capped, re-encoded as JPEG (which also drops any EXIF the source
+   carried), and the result is what gets published. The master stays in the private gallery. */
+const PORTFOLIO_EDGE = 1400;    // plenty for a retina grid + lightbox, useless for print
+const PORTFOLIO_Q = 0.82;
+async function downscaleForWeb(src, edge = PORTFOLIO_EDGE, q = PORTFOLIO_Q) {
+  const img = await new Promise((res, rej) => {
+    const im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = () => res(im); im.onerror = () => rej(new Error("couldn't read the image"));
+    im.src = src;
+  });
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const scale = Math.min(1, edge / Math.max(iw, ih));
+  const w = Math.max(1, Math.round(iw * scale)), h = Math.max(1, Math.round(ih * scale));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(img, 0, 0, w, h);
+  // JPEG on purpose: re-encoding strips metadata, and there is no alpha to preserve here.
+  return { dataUrl: c.toDataURL("image/jpeg", q), w, h, fromW: iw, fromH: ih };
+}
+async function publishSelection(btn) {
+  const picks = Object.values(galSel).filter((x) => x.type !== "video");
+  const skipped = Object.values(galSel).length - picks.length;
+  if (!picks.length) { toast(skipped ? "video isn't supported in the portfolio yet — pick images" : "select some images first"); return; }
+  const label = btn.textContent; btn.disabled = true;
+  let ok = 0, fail = 0;
+  for (let i = 0; i < picks.length; i++) {
+    btn.textContent = `publishing ${i + 1}/${picks.length}…`;
+    try {
+      let src = picks[i].src;
+      if (!src) { const d = await api("/api/gallery?id=" + encodeURIComponent(picks[i].id)); src = d.dataUrl || d.url || ""; }
+      if (!src) throw new Error("no image data");
+      const meta = galMedia.find((m) => m.id === picks[i].id) || {};
+      const shrunk = await downscaleForWeb(src);
+      await api("/api/portfolio", {
+        dataUrl: shrunk.dataUrl, w: shrunk.w, h: shrunk.h,
+        title: (meta.prompt || "").slice(0, 80) || "Untitled",
+        tags: [], sourceId: picks[i].id,
+        provider: meta.provider || null, model: (meta.meta && meta.meta.model) || null,
+      });
+      ok++;
+    } catch (e) { fail++; console.warn("publish failed", e); }
+  }
+  btn.disabled = false; btn.textContent = label;
+  galSel = {}; renderGallery();
+  toast(`published ${ok} to the portfolio${fail ? ` · ${fail} failed` : ""}${skipped ? ` · ${skipped} video skipped` : ""}`);
 }
 
 // Lightbox — videos play looping; images open big with click-to-zoom (2x, centered on click),
