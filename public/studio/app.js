@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 76; // v76: enable the Drive API before the scope step — the scope list only shows enabled APIs
+const BUILD = 77;
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -291,14 +291,12 @@ function renderChatAtts() {
 }
 /* Two full-screen workspaces. Exactly one owns the window; the choice is remembered. */
 function setScreen(name) {
-  const s = name === "chat" ? "chat" : name === "upload" ? "upload" : "board";
+  const s = name === "chat" ? "chat" : "board";
   document.body.dataset.screen = s;
   $("scrChat").classList.toggle("on", s === "chat");
   $("scrBoard").classList.toggle("on", s === "board");
-  const su = $("scrUpload"); if (su) su.classList.toggle("on", s === "upload");
   try { localStorage.setItem("plx-screen", s); } catch {}
   if (s === "board") renderSpace();
-  else if (s === "upload") { cvAudio.stop(); upInit(); }
   else { cvAudio.stop(); chatScrollBottom(); const ta = $("chatText"); if (ta) ta.focus(); }
 }
 /* Auto-scroll rule: only stick to the bottom when the reader is ALREADY there.
@@ -948,11 +946,6 @@ function updateGalBar() {
   mv.innerHTML = `<option value="">Move to…</option>` + galFolders.map((f) => `<option value="${esc(f.id)}">📁 ${esc(f.name)}</option>`).join("") + `<option value="__new">＋ New folder…</option><option value="__none">Unsorted</option>`;
   mv.onchange = () => moveSelectedTo(mv.value);
   bar.appendChild(mv);
-  const pub = document.createElement("button"); pub.className = "tbtn"; pub.style.cssText = "padding:5px 10px;font-size:var(--f2);margin-left:auto";
-  pub.textContent = "🖼 PUBLISH TO PORTFOLIO";
-  pub.title = "downscale in the browser and publish to the public portfolio — the full-size file never leaves this machine";
-  pub.onclick = () => publishSelection(pub);
-  bar.appendChild(pub);
   const send = document.createElement("button"); send.className = "btn-solid"; send.style.cssText = "padding:5px 10px;font-size:11px"; send.textContent = "👁 SEND TO CLAUDE";
   send.onclick = sendSelectionToClaude;
   const clr = document.createElement("button"); clr.className = "tbtn"; clr.style.cssText = "padding:5px 8px;font-size:11px"; clr.textContent = "clear";
@@ -960,68 +953,6 @@ function updateGalBar() {
   bar.appendChild(send); bar.appendChild(clr);
 }
 
-/* ---- publishing to the public portfolio (v70) --------------------------------------------
-   The ONLY meaningful protection against someone lifting your work is that a full-resolution
-   file never reaches the server. So the downscale happens here, in the browser, before the
-   upload: longest edge capped, re-encoded as JPEG (which also drops any EXIF the source
-   carried), and the result is what gets published. The master stays in the private gallery. */
-const PORTFOLIO_EDGE = 1400;    // plenty for a retina grid + lightbox, useless for print
-const PORTFOLIO_Q = 0.82;
-async function downscaleForWeb(src, edge = PORTFOLIO_EDGE, q = PORTFOLIO_Q) {
-  const img = await new Promise((res, rej) => {
-    const im = new Image(); im.crossOrigin = "anonymous";
-    im.onload = () => res(im); im.onerror = () => rej(new Error("couldn't read the image"));
-    im.src = src;
-  });
-  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-  const scale = Math.min(1, edge / Math.max(iw, ih));
-  const w = Math.max(1, Math.round(iw * scale)), h = Math.max(1, Math.round(ih * scale));
-  const c = document.createElement("canvas"); c.width = w; c.height = h;
-  const g = c.getContext("2d");
-  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
-  g.drawImage(img, 0, 0, w, h);
-  // JPEG on purpose: re-encoding strips metadata, and there is no alpha to preserve here.
-  return { dataUrl: c.toDataURL("image/jpeg", q), w, h, fromW: iw, fromH: ih };
-}
-// The series the archive is actually organised into — offered as suggestions so published
-// work lands filterable instead of as an untagged pile (which is what v70 produced).
-const PORTFOLIO_SERIES = ["Cyberpunk", "Custom Cards", "Waifu Cards", "Manawa Cards", "Impact",
-  "Drip", "Monochrome", "Manga", "Glamour", "Ghost Fighting Spirit", "Fullmetal",
-  "AI Bands", "AI Creators", "Persona", "Character Sheets"];
-async function publishSelection(btn) {
-  const picks = Object.values(galSel).filter((x) => x.type !== "video");
-  const skipped = Object.values(galSel).length - picks.length;
-  if (!picks.length) { toast(skipped ? "video isn't supported in the portfolio yet — pick images" : "select some images first"); return; }
-  // Default to the gallery folder these came from, if they all share one — it's usually
-  // already the series name, so the common case is just pressing Enter.
-  const folders = [...new Set(picks.map((p) => { const m = galMedia.find((x) => x.id === p.id); return (m && m.folder) || ""; }))];
-  const guess = folders.length === 1 && folders[0]
-    ? (galFolders.find((f) => f.id === folders[0]) || {}).name || "" : "";
-  const series = (prompt(`Series for these ${picks.length} piece${picks.length > 1 ? "s" : ""}?\n\n` +
-    `Known series: ${PORTFOLIO_SERIES.join(", ")}\n\n(leave blank for none)`, guess) || "").trim();
-  const label = btn.textContent; btn.disabled = true;
-  let ok = 0, fail = 0;
-  for (let i = 0; i < picks.length; i++) {
-    btn.textContent = `publishing ${i + 1}/${picks.length}…`;
-    try {
-      let src = picks[i].src;
-      if (!src) { const d = await api("/api/gallery?id=" + encodeURIComponent(picks[i].id)); src = d.dataUrl || d.url || ""; }
-      if (!src) throw new Error("no image data");
-      const meta = galMedia.find((m) => m.id === picks[i].id) || {};
-      const shrunk = await downscaleForWeb(src);
-      await api("/api/portfolio", {
-        dataUrl: shrunk.dataUrl, w: shrunk.w, h: shrunk.h,
-        title: (meta.prompt || "").slice(0, 80) || "Untitled",
-        tags: series ? [series] : [], sourceId: picks[i].id,
-        provider: meta.provider || null, model: (meta.meta && meta.meta.model) || null,
-      });
-      ok++;
-    } catch (e) { fail++; console.warn("publish failed", e); }
-  }
-  btn.disabled = false; btn.textContent = label;
-  galSel = {}; renderGallery();
-  toast(`published ${ok} to the portfolio${fail ? ` · ${fail} failed` : ""}${skipped ? ` · ${skipped} video skipped` : ""}`);
-}
 
 // Lightbox — videos play looping; images open big with click-to-zoom (2x, centered on click),
 // plus an "add to prompt" button so you can still pull the image into a prompt from here.
@@ -2619,278 +2550,8 @@ $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 $("logoutBtn").onclick = logout;
 $("scrChat").onclick = () => setScreen("chat");
 $("scrBoard").onclick = () => setScreen("board");
-if ($("scrUpload")) $("scrUpload").onclick = () => setScreen("upload");
 
-/* ================= v72 — GALLERY UPLOAD ====================================================
-   Pull finished art straight from Google Drive, downscale it IN THIS TAB, publish the small
-   copy. The full-size file goes Drive → browser → canvas and stops there: it never reaches
-   Parallax's server, so the portfolio physically cannot leak a print-resolution master.
 
-   Auth is Google Identity Services with a read-only Drive scope. The OAuth client ID is not a
-   secret (it's public by design), so it lives in localStorage rather than the key vault. The
-   access token is kept in memory only — closing the tab drops it. ------------------------- */
-const GD = {
-  CLIENT_KEY: "plx-gdrive-client",
-  ROOT_KEY: "plx-gdrive-root",
-  DEFAULT_ROOT: "1TS1nDFXN7ALVwBk51c04A03t-uEH06gO",   // the "output" folder
-  SCOPE: "https://www.googleapis.com/auth/drive.readonly",
-  token: null, tokenClient: null, gisReady: false,
-};
-let upFolders = [], upFiles = [], upSel = {}, upNsfwSel = {}, upBusy = false, upInited = false;
-
-function upSetConn(msg, ok) {
-  const el = $("upConnState"); if (!el) return;
-  el.textContent = msg;
-  el.style.color = ok ? "var(--sec)" : "var(--faint)";
-  $("upStep1").classList.toggle("done", !!ok);
-}
-function loadGis() {
-  if (GD.gisReady) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const sc = document.createElement("script");
-    sc.src = "https://accounts.google.com/gsi/client";
-    sc.async = true; sc.defer = true;
-    sc.onload = () => { GD.gisReady = true; resolve(true); };
-    sc.onerror = () => resolve(false);
-    document.head.appendChild(sc);
-  });
-}
-/* A Client ID has a very specific shape. Validating it HERE means a wrong paste gets a
-   sentence that tells you what to do, instead of Google's "Error 401: invalid_client" —
-   which is what happens when a Drive folder URL ends up in this box. */
-const CLIENT_ID_RE = /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i;
-function clientIdProblem(v) {
-  const id = (v || "").trim();
-  if (!id) return "paste your OAuth Client ID above, then press Save";
-  if (/drive\.google\.com|\/folders\//i.test(id))
-    return "that's a Drive FOLDER LINK, not a Client ID — it belongs in step 2. Step 1 wants the OAuth Client ID from Google Cloud Console.";
-  // The single most common wrong turn: Google Cloud offers "API key" as the first and easiest
-  // option under Create Credentials, but an API key cannot authorise a user's private Drive.
-  if (/^AIza[0-9A-Za-z_-]{10,}$/.test(id))
-    return "that's an API KEY (AIza…), not an OAuth Client ID. An API key can't read your private Drive. Go back to Credentials → Create Credentials → OAuth client ID → Web application. (Delete that API key too — it's now been on screen.)";
-  if (/^GOCSPX-/i.test(id))
-    return "that's the client SECRET — never paste that here. Use the Client ID (ends in .apps.googleusercontent.com).";
-  if (/^\{|"type"\s*:\s*"service_account"/.test(id))
-    return "that's a service-account JSON key. Service accounts can't access your personal Drive — you need a Web application OAuth client ID.";
-  if (/^[A-Za-z0-9_-]{20,60}$/.test(id) && !id.includes("."))
-    return "that looks like a folder/file ID, not a Client ID. A Client ID ends in .apps.googleusercontent.com";
-  if (!CLIENT_ID_RE.test(id))
-    return "that doesn't look like a Client ID. It should read like 000000000000-abc123.apps.googleusercontent.com";
-  return "";
-}
-function extractFolderId(v) {
-  const t = (v || "").trim();
-  const m = t.match(/\/folders\/([A-Za-z0-9_-]+)/) || t.match(/[?&]id=([A-Za-z0-9_-]+)/);
-  return m ? m[1] : t;
-}
-async function gdConnect() {
-  const id = (localStorage.getItem(GD.CLIENT_KEY) || "").trim();
-  const bad = clientIdProblem(id);
-  if (bad) { upSetConn("⚠ " + bad, false); toast(bad.slice(0, 120)); return; }
-  upSetConn("loading Google…", false);
-  if (!(await loadGis()) || !window.google?.accounts?.oauth2) {
-    upSetConn("couldn't load Google's sign-in script — check your connection or an ad blocker", false);
-    return;
-  }
-  GD.tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: id, scope: GD.SCOPE,
-    callback: (res) => {
-      if (res && res.access_token) {
-        GD.token = res.access_token;
-        upSetConn("connected ✓", true);
-        gdLoadFolders();
-      } else {
-        upSetConn("Google didn't return a token" + (res && res.error ? " — " + res.error : ""), false);
-      }
-    },
-    error_callback: (e) => {
-      const t = (e && (e.type || e.message)) || "cancelled";
-      // The two failures everyone hits, translated into the fix.
-      if (/popup_closed/i.test(t)) upSetConn("sign-in window closed before finishing — press Connect Drive again", false);
-      else if (/popup_failed|popup_blocked/i.test(t)) upSetConn("your browser blocked the Google popup — allow popups for this site and retry", false);
-      else if (/idpiframe|origin/i.test(t)) upSetConn("⚠ this site isn't in the client's Authorised JavaScript origins — add " + location.origin + " in Google Cloud Console", false);
-      else if (/access_denied/i.test(t)) upSetConn("⚠ Google refused the account. If the app is in Testing, add your Google address under Audience → Test users.", false);
-      else upSetConn("sign-in failed: " + t, false);
-    },
-  });
-  GD.tokenClient.requestAccessToken({ prompt: GD.token ? "" : "consent" });
-}
-// Every Drive call funnels through here so an expired token gives a clear instruction rather
-// than an empty grid.
-async function gdApi(path) {
-  if (!GD.token) throw new Error("not connected to Drive");
-  const r = await fetch("https://www.googleapis.com/drive/v3/" + path, {
-    headers: { Authorization: "Bearer " + GD.token },
-  });
-  if (r.status === 401 || r.status === 403) { GD.token = null; upSetConn("session expired — press Connect Drive again", false); throw new Error("Drive session expired"); }
-  if (!r.ok) throw new Error("Drive " + r.status + ": " + (await r.text()).slice(0, 160));
-  return r.json();
-}
-const gdQ = (q, extra = "") =>
-  "files?q=" + encodeURIComponent(q) + "&pageSize=200&fields=files(id,name,mimeType,size,imageMediaMetadata(width,height))&orderBy=name" + extra;
-
-async function gdLoadFolders() {
-  const root = ($("upRootId").value || "").trim() || GD.DEFAULT_ROOT;
-  localStorage.setItem(GD.ROOT_KEY, root);
-  const box = $("upFolders"); box.innerHTML = '<span class="up-note">loading…</span>';
-  try {
-    const d = await gdApi(gdQ(`'${root}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`));
-    upFolders = d.files || [];
-    // the root itself is a valid choice — loose files often live there
-    box.innerHTML = "";
-    const mk = (id, name) => {
-      const b = document.createElement("button");
-      b.className = "up-folder"; b.dataset.id = id; b.textContent = name;
-      b.onclick = () => { [...box.children].forEach((c) => c.classList.toggle("on", c === b)); gdLoadFiles(id); };
-      box.appendChild(b);
-    };
-    mk(root, "⌂ output (root)");
-    upFolders.forEach((f) => mk(f.id, f.name));
-    if (!upFolders.length) box.innerHTML += '<span class="up-note">no sub-folders found</span>';
-    $("upStep2").classList.add("done");
-  } catch (e) { box.innerHTML = '<span class="up-note">⚠ ' + esc(String(e.message || e)) + "</span>"; }
-}
-
-async function gdLoadFiles(folderId) {
-  const grid = $("upGrid");
-  grid.innerHTML = '<div class="up-empty">loading…</div>';
-  upSel = {}; upNsfwSel = {}; upBarUpd();
-  try {
-    const d = await gdApi(gdQ(`'${folderId}' in parents and mimeType contains 'image/' and trashed = false`));
-    upFiles = d.files || [];
-    if (!upFiles.length) { grid.innerHTML = '<div class="up-empty">no images in this folder</div>'; return; }
-    grid.innerHTML = "";
-    upFiles.forEach((f, i) => {
-      const t = document.createElement("div");
-      t.className = "up-tile"; t.dataset.i = i;
-      const mb = f.size ? (Number(f.size) / 1e6).toFixed(1) + " MB" : "";
-      const dim = f.imageMediaMetadata ? f.imageMediaMetadata.width + "×" + f.imageMediaMetadata.height : "";
-      t.innerHTML = `<img alt="" loading="lazy" src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.id)}&sz=w320">
-        <span class="pick"></span><span class="nm">${esc(f.name)}${dim || mb ? " · " + esc([dim, mb].filter(Boolean).join(" · ")) : ""}</span>`;
-      t.onclick = () => {
-        if (upSel[f.id]) { delete upSel[f.id]; delete upNsfwSel[f.id]; } else upSel[f.id] = f;
-        t.classList.toggle("sel", !!upSel[f.id]);
-        if (!upSel[f.id]) { t.classList.remove("isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); }
-        upBarUpd();
-      };
-      grid.appendChild(t);
-    });
-    $("upStep3").classList.add("done");
-  } catch (e) { grid.innerHTML = '<div class="up-empty">⚠ ' + esc(String(e.message || e)) + "</div>"; }
-}
-
-function upBarUpd() {
-  const ids = Object.keys(upSel), n = ids.length;
-  $("upBar").style.display = n ? "flex" : "none";
-  const nsfw = ids.filter((id) => upNsfwSel[id]).length;
-  $("upCount").innerHTML = `<b>${n}</b> selected` + (nsfw ? ` · <span style="color:var(--red)">${nsfw} marked 18+</span>` : "");
-}
-function upMarkNsfw() {
-  const ids = Object.keys(upSel); if (!ids.length) return;
-  const allOn = ids.every((id) => upNsfwSel[id]);
-  ids.forEach((id) => { if (allOn) delete upNsfwSel[id]; else upNsfwSel[id] = true; });
-  [...$("upGrid").children].forEach((t) => {
-    const f = upFiles[+t.dataset.i]; if (!f || !upSel[f.id]) return;
-    const on = !!upNsfwSel[f.id];
-    t.classList.toggle("isnsfw", on);
-    let b = t.querySelector(".nsfw");
-    if (on && !b) { b = document.createElement("span"); b.className = "nsfw"; b.textContent = "18+"; t.appendChild(b); }
-    if (!on && b) b.remove();
-  });
-  upBarUpd();
-}
-
-// Fetch the master, shrink it here, publish only the small copy.
-async function gdFetchDataUrl(fileId) {
-  const r = await fetch("https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileId) + "?alt=media", {
-    headers: { Authorization: "Bearer " + GD.token },
-  });
-  if (!r.ok) throw new Error("download failed (" + r.status + ")");
-  const blob = await r.blob();
-  return await new Promise((res, rej) => {
-    const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob);
-  });
-}
-async function upPublish() {
-  if (upBusy) return;
-  const picks = Object.values(upSel);
-  if (!picks.length) return;
-  const series = ($("upSeries").value || "").trim();
-  upBusy = true;
-  const go = $("upGo"); go.disabled = true;
-  $("upProgWrap").style.display = "block";
-  let ok = 0, fail = 0;
-  for (let i = 0; i < picks.length; i++) {
-    const f = picks[i];
-    go.textContent = `publishing ${i + 1}/${picks.length}…`;
-    $("upProg").style.width = Math.round((i / picks.length) * 100) + "%";
-    try {
-      const master = await gdFetchDataUrl(f.id);
-      const small = await downscaleForWeb(master);          // 1400px / JPEG — same path as the gallery
-      await api("/api/portfolio", {
-        dataUrl: small.dataUrl, w: small.w, h: small.h,
-        title: f.name.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim() || "Untitled",
-        tags: series ? [series] : [],
-        nsfw: !!upNsfwSel[f.id],
-        driveId: f.id,
-      });
-      ok++;
-    } catch (e) { fail++; console.warn("upload failed", f.name, e); }
-  }
-  $("upProg").style.width = "100%";
-  go.disabled = false; go.textContent = "⬆ Publish selected"; upBusy = false;
-  setTimeout(() => { $("upProgWrap").style.display = "none"; $("upProg").style.width = "0"; }, 900);
-  upSel = {}; upNsfwSel = {};
-  [...$("upGrid").children].forEach((t) => { t.classList.remove("sel", "isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); });
-  upBarUpd();
-  toast(`published ${ok} to the portfolio${fail ? ` · ${fail} failed` : ""}`);
-}
-
-function upInit() {
-  if (upInited) return; upInited = true;
-  const og = $("upOrigin"); if (og) og.textContent = location.origin;   // exact string to paste into Google
-  $("upClientId").value = localStorage.getItem(GD.CLIENT_KEY) || "";
-  $("upRootId").value = localStorage.getItem(GD.ROOT_KEY) || GD.DEFAULT_ROOT;
-  const stored = localStorage.getItem(GD.CLIENT_KEY) || "";
-  const storedBad = stored ? clientIdProblem(stored) : "";
-  upSetConn(GD.token ? "connected ✓"
-    : storedBad ? "⚠ " + storedBad
-    : stored ? "not connected yet — press Connect Drive"
-    : "no Client ID saved", !!GD.token);
-  $("upSaveId").onclick = () => {
-    const raw = ($("upClientId").value || "").trim();
-    const bad = clientIdProblem(raw);
-    if (bad) {
-      // If it's a folder link, don't just complain — put it where it actually belongs.
-      if (/drive\.google\.com|\/folders\//i.test(raw)) {
-        $("upRootId").value = extractFolderId(raw);
-        localStorage.setItem(GD.ROOT_KEY, $("upRootId").value);
-        $("upClientId").value = "";
-        upSetConn("⚠ " + bad + " (moved it to step 2 for you)", false);
-      } else upSetConn("⚠ " + bad, false);
-      toast(bad.slice(0, 120));
-      return;
-    }
-    localStorage.setItem(GD.CLIENT_KEY, raw);
-    upSetConn("Client ID saved ✓ — press Connect Drive", false); toast("Client ID saved");
-  };
-  // step 2 accepts a pasted Drive URL as readily as a bare id
-  $("upRootId").onchange = () => { $("upRootId").value = extractFolderId($("upRootId").value); };
-  $("upConnect").onclick = gdConnect;
-  $("upLoadFolders").onclick = gdLoadFolders;
-  $("upAll").onclick = () => {
-    upFiles.forEach((f) => { upSel[f.id] = f; });
-    [...$("upGrid").children].forEach((t) => t.classList.add("sel"));
-    upBarUpd();
-  };
-  $("upNone").onclick = () => {
-    upSel = {}; upNsfwSel = {};
-    [...$("upGrid").children].forEach((t) => { t.classList.remove("sel", "isnsfw"); const b = t.querySelector(".nsfw"); if (b) b.remove(); });
-    upBarUpd();
-  };
-  $("upNsfw").onclick = upMarkNsfw;
-  $("upGo").onclick = upPublish;
-}
 $("chatToBoard").onclick = () => setScreen("board");
 $("chatTurns").addEventListener("scroll", chatJumpUpd, { passive: true });
 $("chatJump").onclick = chatScrollBottom;

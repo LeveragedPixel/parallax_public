@@ -498,60 +498,6 @@ body[data-theme="terminal"]{--void:#050805;--panel:#0A0F0A;--panel2:#0D140D;--li
 /* screen switching: exactly one workspace owns the window */
 body[data-screen="chat"] main.deck{display:none}
 body[data-screen="board"] #chatView{display:none}
-body[data-screen="upload"] main.deck,body[data-screen="upload"] #chatView{display:none}
-#uploadView{display:none}
-body[data-screen="upload"] #uploadView{display:flex}
-
-/* ---- v72 Gallery Upload: pull from Drive, downscale here, publish ---- */
-#uploadView{flex:1;min-height:0;flex-direction:column;overflow:auto;background:var(--void)}
-.up-wrap{width:100%;max-width:1180px;margin:0 auto;padding:22px 24px 60px}
-.up-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
-.up-h h2{margin:0;font-size:var(--f6);color:var(--txt);letter-spacing:-.01em}
-.up-h .sub{font-size:var(--f2);color:var(--dim)}
-.up-step{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:16px 18px;margin-top:16px}
-.up-step.done{border-color:color-mix(in srgb,var(--sec) 45%,transparent)}
-.up-step h3{margin:0 0 4px;font-size:var(--f3);color:var(--txt);display:flex;align-items:center;gap:8px}
-.up-step h3 .n{width:20px;height:20px;border-radius:50%;background:var(--panel2);border:1px solid var(--line2);
-  display:inline-flex;align-items:center;justify-content:center;font-size:var(--f1);color:var(--dim);flex:0 0 auto}
-.up-step.done h3 .n{background:var(--sec);border-color:var(--sec);color:var(--btn-ink,#06120d)}
-.up-step p{margin:0 0 10px;font-size:var(--f2);color:var(--dim);line-height:1.55}
-.up-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.up-row input[type=text]{flex:1;min-width:240px;font-size:var(--f2)}
-.up-note{font-size:var(--f1);color:var(--faint);margin-top:8px;line-height:1.55}
-.up-note code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:var(--f0)}
-.up-step code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:var(--f1)}
-.up-steps{margin:0 0 12px;padding-left:20px;font-size:var(--f2);color:var(--dim);line-height:1.7}
-.up-steps li{margin:2px 0}
-.up-steps a{color:var(--pri-hi)}
-.up-warn{color:var(--red)}
-.up-folders{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.up-folder{appearance:none;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);
-  border-radius:999px;padding:6px 13px;font:inherit;font-size:var(--f2);cursor:pointer}
-.up-folder:hover{color:var(--txt);border-color:var(--dim)}
-.up-folder.on{background:var(--pri);border-color:var(--pri);color:var(--btn-ink,#fff);font-weight:600}
-.up-folder .c{opacity:.65;margin-left:5px;font-size:var(--f1)}
-.up-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:12px;margin-top:12px}
-.up-tile{position:relative;border:2px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel2);
-  cursor:pointer;aspect-ratio:1;display:flex;align-items:center;justify-content:center}
-.up-tile.sel{border-color:var(--pri)}
-.up-tile img{width:100%;height:100%;object-fit:cover}
-.up-tile .nm{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.82));
-  color:#fff;font-size:var(--f0);padding:14px 7px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.up-tile .pick{position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:5px;
-  background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.4);display:flex;align-items:center;
-  justify-content:center;color:#fff;font-size:var(--f1)}
-.up-tile.sel .pick{background:var(--pri);border-color:var(--pri)}
-.up-tile .nsfw{position:absolute;top:6px;right:6px;background:var(--red);color:#fff;font-size:var(--f0);
-  font-weight:800;letter-spacing:.06em;border-radius:4px;padding:2px 5px}
-.up-tile.isnsfw img{filter:blur(9px)}
-.up-bar{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:11px 14px;margin-top:16px;
-  box-shadow:var(--sh-2)}
-.up-bar .sp{flex:1}
-.up-prog{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;margin-top:10px}
-.up-prog i{display:block;height:100%;background:var(--sec);width:0;transition:width .2s}
-.up-empty{padding:26px 4px;color:var(--faint);font-size:var(--f2)}
-
 .chatview{flex:1;display:flex;min-width:0;min-height:0;background:var(--void)}
 .cv-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
 
@@ -688,7 +634,6 @@ body[data-screen="upload"] #uploadView{display:flex}
     <div class="screensw" role="tablist" aria-label="Workspace">
       <button class="scr" id="scrChat" data-screen="chat" role="tab" title="full-screen Dual Mind chat — Claude and ChatGPT side by side">💬 Chat</button>
       <button class="scr" id="scrBoard" data-screen="board" role="tab" title="full-screen Neural Board — the infinite creative board">⬡ Board</button>
-      <button class="scr" id="scrUpload" data-screen="upload" role="tab" title="pull finished art from Google Drive, downscale it here, and publish to the public portfolio">⬆ Gallery Upload</button>
     </div>
     <button class="tbtn" id="projBtn" title="projects — create, rename, delete; open a chat project as the panel thread">Projects</button>
     <button class="tbtn" id="galBtn" title="your gallery — every render and upload, filed by project">🖼 Gallery</button>
@@ -705,78 +650,6 @@ body[data-screen="upload"] #uploadView{display:flex}
   </div>
 
   <div class="body">
-    <section id="uploadView">
-      <div class="up-wrap">
-        <div class="up-h">
-          <h2>Gallery Upload</h2>
-          <span class="sub">pull finished art from Drive → downscale here → publish to the public portfolio</span>
-        </div>
-
-        <div class="up-step" id="upStep1">
-          <h3><span class="n">1</span> Connect Google Drive</h3>
-          <p>One-time setup, ~5 minutes. You need an OAuth <b>Client ID</b>.
-            <b class="up-warn">Not an API key</b> — an API key cannot read a private Drive.
-            <b>Do these in order</b>; Google blocks the last step until the first two are done.</p>
-          <ol class="up-steps">
-            <li><b>Branding</b> — <a href="https://console.cloud.google.com/auth/branding" target="_blank" rel="noopener">open it</a> → <b>Get started</b>.
-              App name <code>Parallax</code>, your email, Audience = <b>External</b>, agree, <b>Create</b>.
-              <span class="up-warn">This is the "consent screen" Google keeps asking for.</span></li>
-            <li><b>Audience</b> — <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener">open it</a> → <b>Test users</b> → <b>+ Add users</b> →
-              your own Google address → Save. Skip this and sign-in fails with <code>access_denied</code>.</li>
-            <li><b>Enable the Drive API</b> — <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">open it</a> → <b>Enable</b>.
-              <span class="up-warn">Must come before the next step</span> — the scope list only shows scopes for enabled APIs.</li>
-            <li><b>Data Access</b> — <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener">open it</a> → <b>Add or remove scopes</b> →
-              filter <code>drive</code> → tick <code>.../auth/drive.readonly</code> → Update → Save.
-              If the list is empty, paste <code>https://www.googleapis.com/auth/drive.readonly</code> into
-              <b>Manually add scopes</b> → <b>Add to table</b>.</li>
-            <li><b>Clients</b> — <a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">Create client</a> →
-              type <b>Web application</b> <span class="up-warn">(not "API key")</span>, name it anything.</li>
-            <li>Under <b>Authorised JavaScript origins</b> → <b>+ Add URI</b> → <code id="upOrigin"></code>.
-              Leave <b>redirect URIs empty</b> — this uses the token flow, not redirects.</li>
-            <li><b>Create</b>, then copy the <b>Client ID</b> (ends <code>.apps.googleusercontent.com</code>) into the box below.
-              Ignore the client secret.</li>
-          </ol>
-          <div class="up-note">First connect shows "Google hasn't verified this app" — expected for your own
-            private client. Choose <b>Advanced → Go to … (unsafe)</b>.</div>
-          <div class="up-row">
-            <input type="text" id="upClientId" placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com" spellcheck="false">
-            <button class="tbtn" id="upSaveId">Save</button>
-            <button class="btn-solid" id="upConnect">Connect Drive</button>
-            <span id="upConnState" class="up-note" style="margin:0"></span>
-          </div>
-          <div class="up-note">Read-only access (<code>drive.readonly</code>). The token lives in this tab only —
-            nothing is stored on the server, and full-size files never reach it.</div>
-        </div>
-
-        <div class="up-step" id="upStep2">
-          <h3><span class="n">2</span> Pick a folder</h3>
-          <p>Folders inside your <b>output</b> folder. Pick one to see what's in it.</p>
-          <div class="up-row">
-            <input type="text" id="upRootId" placeholder="root folder id (defaults to your output folder)" spellcheck="false">
-            <button class="tbtn" id="upLoadFolders">Refresh folders</button>
-          </div>
-          <div class="up-folders" id="upFolders"></div>
-        </div>
-
-        <div class="up-step" id="upStep3">
-          <h3><span class="n">3</span> Choose the pieces</h3>
-          <p>Click to select. Mark anything adult with <b>18+</b> — it publishes blurred behind an
-            age gate, and the image isn't even fetched until a visitor confirms.</p>
-          <div class="up-grid" id="upGrid"><div class="up-empty">Pick a folder above.</div></div>
-        </div>
-
-        <div class="up-bar" id="upBar" style="display:none">
-          <span id="upCount"></span>
-          <button class="tbtn" id="upAll">Select all</button>
-          <button class="tbtn" id="upNone">Clear</button>
-          <button class="tbtn" id="upNsfw" title="mark the selected pieces 18+">🔞 Mark 18+</button>
-          <input type="text" id="upSeries" placeholder="series (e.g. Cyberpunk)" style="max-width:190px;font-size:var(--f2)">
-          <div class="sp"></div>
-          <button class="btn-solid" id="upGo">⬆ Publish selected</button>
-        </div>
-        <div class="up-prog" id="upProgWrap" style="display:none"><i id="upProg"></i></div>
-      </div>
-    </section>
 
     <section id="chatView" class="chatview">
       <!-- thread rail: every chat is its own renamable thread; projects group them -->
@@ -920,6 +793,6 @@ body[data-screen="upload"] #uploadView{display:flex}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=76"></script>
+<script src="app.js?v=77"></script>
 </body>
 </html>
