@@ -723,9 +723,12 @@ body[data-screen="upload"] #uploadView{display:flex}
               <span class="up-warn">This is the "consent screen" Google keeps asking for.</span></li>
             <li><b>Audience</b> — <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener">open it</a> → <b>Test users</b> → <b>+ Add users</b> →
               your own Google address → Save. Skip this and sign-in fails with <code>access_denied</code>.</li>
+            <li><b>Enable the Drive API</b> — <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">open it</a> → <b>Enable</b>.
+              <span class="up-warn">Must come before the next step</span> — the scope list only shows scopes for enabled APIs.</li>
             <li><b>Data Access</b> — <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener">open it</a> → <b>Add or remove scopes</b> →
-              search <code>drive.readonly</code> → tick it → Update → Save.</li>
-            <li><b>Enable the Drive API</b> — <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">open it</a> → <b>Enable</b>.</li>
+              filter <code>drive</code> → tick <code>.../auth/drive.readonly</code> → Update → Save.
+              If the list is empty, paste <code>https://www.googleapis.com/auth/drive.readonly</code> into
+              <b>Manually add scopes</b> → <b>Add to table</b>.</li>
             <li><b>Clients</b> — <a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">Create client</a> →
               type <b>Web application</b> <span class="up-warn">(not "API key")</span>, name it anything.</li>
             <li>Under <b>Authorised JavaScript origins</b> → <b>+ Add URI</b> → <code id="upOrigin"></code>.
@@ -917,6 +920,6 @@ body[data-screen="upload"] #uploadView{display:flex}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=75"></script>
+<script src="app.js?v=76"></script>
 </body>
 </html>
