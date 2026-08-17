@@ -714,21 +714,27 @@ body[data-screen="upload"] #uploadView{display:flex}
 
         <div class="up-step" id="upStep1">
           <h3><span class="n">1</span> Connect Google Drive</h3>
-          <p>One-time setup, about five minutes. You need an OAuth <b>Client ID</b>.
-            <b class="up-warn">Not an API key</b>, not the client secret, not the folder link —
-            an API key cannot read a private Drive, so it will never work here.</p>
+          <p>One-time setup, ~5 minutes. You need an OAuth <b>Client ID</b>.
+            <b class="up-warn">Not an API key</b> — an API key cannot read a private Drive.
+            <b>Do these in order</b>; Google blocks the last step until the first two are done.</p>
           <ol class="up-steps">
-            <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → Credentials</a> (create a project if you have none).</li>
-            <li>Enable the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API</a> for that project.</li>
-            <li>Fill in <a href="https://console.cloud.google.com/auth/branding" target="_blank" rel="noopener">Branding</a> (app name + your email). Google won't let you create a client without it.</li>
-            <li>Under <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener">Audience</a>, add your own Google address as a <b>Test user</b> — otherwise sign-in returns <code>access_denied</code>.</li>
-            <li>Back in Credentials: <b>Create Credentials → OAuth client ID → Web application</b>
-              <span class="up-warn">(not "API key")</span>.</li>
-            <li>Under <b>Authorised JavaScript origins</b> add <code id="upOrigin"></code>.</li>
-            <li>Copy the <b>Client ID</b> — it ends in <code>.apps.googleusercontent.com</code> — and paste it below.</li>
+            <li><b>Branding</b> — <a href="https://console.cloud.google.com/auth/branding" target="_blank" rel="noopener">open it</a> → <b>Get started</b>.
+              App name <code>Parallax</code>, your email, Audience = <b>External</b>, agree, <b>Create</b>.
+              <span class="up-warn">This is the "consent screen" Google keeps asking for.</span></li>
+            <li><b>Audience</b> — <a href="https://console.cloud.google.com/auth/audience" target="_blank" rel="noopener">open it</a> → <b>Test users</b> → <b>+ Add users</b> →
+              your own Google address → Save. Skip this and sign-in fails with <code>access_denied</code>.</li>
+            <li><b>Data Access</b> — <a href="https://console.cloud.google.com/auth/scopes" target="_blank" rel="noopener">open it</a> → <b>Add or remove scopes</b> →
+              search <code>drive.readonly</code> → tick it → Update → Save.</li>
+            <li><b>Enable the Drive API</b> — <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">open it</a> → <b>Enable</b>.</li>
+            <li><b>Clients</b> — <a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener">Create client</a> →
+              type <b>Web application</b> <span class="up-warn">(not "API key")</span>, name it anything.</li>
+            <li>Under <b>Authorised JavaScript origins</b> → <b>+ Add URI</b> → <code id="upOrigin"></code>.
+              Leave <b>redirect URIs empty</b> — this uses the token flow, not redirects.</li>
+            <li><b>Create</b>, then copy the <b>Client ID</b> (ends <code>.apps.googleusercontent.com</code>) into the box below.
+              Ignore the client secret.</li>
           </ol>
-          <div class="up-note">First connection shows "Google hasn't verified this app" — that's expected
-            for your own private client. Choose <b>Advanced → Go to Leveraged Pixel (unsafe)</b>.</div>
+          <div class="up-note">First connect shows "Google hasn't verified this app" — expected for your own
+            private client. Choose <b>Advanced → Go to … (unsafe)</b>.</div>
           <div class="up-row">
             <input type="text" id="upClientId" placeholder="000000000000-xxxxxxxx.apps.googleusercontent.com" spellcheck="false">
             <button class="tbtn" id="upSaveId">Save</button>
@@ -911,6 +917,6 @@ body[data-screen="upload"] #uploadView{display:flex}
 </div></div></div>
 
 <div class="verbadge" id="verBadge">PARALLAX</div>
-<script src="app.js?v=74"></script>
+<script src="app.js?v=75"></script>
 </body>
 </html>
