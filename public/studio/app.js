@@ -2,7 +2,7 @@
    Chat = project columns (both minds answer inside each column) · Image/Video generation ·
    provider connections · usage meters · reference-wall dock · author skills. */
 
-const BUILD = 72; // v72: Gallery Upload screen — Drive → downscale here → publish, with an 18+ gate
+const BUILD = 73; // v73: validate the Drive Client ID here instead of bouncing to a Google error page
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = "plx-token";
 const THEMES = ["midnight","ember","cobalt","crimson","unit01","bebop","ronin","hivis","toxin","ice","ghost","akira","sakura","oni","mecha","vapor","tatami","magma","ocean","violet","terminal"];
@@ -2655,9 +2655,32 @@ function loadGis() {
     document.head.appendChild(sc);
   });
 }
+/* A Client ID has a very specific shape. Validating it HERE means a wrong paste gets a
+   sentence that tells you what to do, instead of Google's "Error 401: invalid_client" —
+   which is what happens when a Drive folder URL ends up in this box. */
+const CLIENT_ID_RE = /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i;
+function clientIdProblem(v) {
+  const id = (v || "").trim();
+  if (!id) return "paste your OAuth Client ID above, then press Save";
+  if (/drive\.google\.com|\/folders\//i.test(id))
+    return "that's a Drive FOLDER LINK, not a Client ID — it belongs in step 2. Step 1 wants the OAuth Client ID from Google Cloud Console.";
+  if (/^[A-Za-z0-9_-]{20,60}$/.test(id) && !id.includes("."))
+    return "that looks like a folder/file ID, not a Client ID. A Client ID ends in .apps.googleusercontent.com";
+  if (/^GOCSPX-/i.test(id))
+    return "that's the client SECRET — never paste that here. Use the Client ID (ends in .apps.googleusercontent.com).";
+  if (!CLIENT_ID_RE.test(id))
+    return "that doesn't look like a Client ID. It should read like 000000000000-abc123.apps.googleusercontent.com";
+  return "";
+}
+function extractFolderId(v) {
+  const t = (v || "").trim();
+  const m = t.match(/\/folders\/([A-Za-z0-9_-]+)/) || t.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : t;
+}
 async function gdConnect() {
   const id = (localStorage.getItem(GD.CLIENT_KEY) || "").trim();
-  if (!id) { upSetConn("add a Client ID first", false); toast("paste your Google OAuth Client ID and Save"); return; }
+  const bad = clientIdProblem(id);
+  if (bad) { upSetConn("⚠ " + bad, false); toast(bad.slice(0, 120)); return; }
   upSetConn("loading Google…", false);
   if (!(await loadGis()) || !window.google?.accounts?.oauth2) {
     upSetConn("couldn't load Google's sign-in script — check your connection or an ad blocker", false);
@@ -2674,7 +2697,14 @@ async function gdConnect() {
         upSetConn("Google didn't return a token" + (res && res.error ? " — " + res.error : ""), false);
       }
     },
-    error_callback: (e) => upSetConn("sign-in failed: " + ((e && (e.type || e.message)) || "cancelled"), false),
+    error_callback: (e) => {
+      const t = (e && (e.type || e.message)) || "cancelled";
+      // The two failures everyone hits, translated into the fix.
+      if (/popup_closed/i.test(t)) upSetConn("sign-in window closed before finishing — press Connect Drive again", false);
+      else if (/popup_failed|popup_blocked/i.test(t)) upSetConn("your browser blocked the Google popup — allow popups for this site and retry", false);
+      else if (/idpiframe|origin/i.test(t)) upSetConn("⚠ this site isn't in the client's Authorised JavaScript origins — add " + location.origin + " in Google Cloud Console", false);
+      else upSetConn("sign-in failed: " + t, false);
+    },
   });
   GD.tokenClient.requestAccessToken({ prompt: GD.token ? "" : "consent" });
 }
@@ -2811,13 +2841,34 @@ async function upPublish() {
 
 function upInit() {
   if (upInited) return; upInited = true;
+  const og = $("upOrigin"); if (og) og.textContent = location.origin;   // exact string to paste into Google
   $("upClientId").value = localStorage.getItem(GD.CLIENT_KEY) || "";
   $("upRootId").value = localStorage.getItem(GD.ROOT_KEY) || GD.DEFAULT_ROOT;
-  upSetConn(GD.token ? "connected ✓" : (localStorage.getItem(GD.CLIENT_KEY) ? "not connected yet" : "no Client ID saved"), !!GD.token);
+  const stored = localStorage.getItem(GD.CLIENT_KEY) || "";
+  const storedBad = stored ? clientIdProblem(stored) : "";
+  upSetConn(GD.token ? "connected ✓"
+    : storedBad ? "⚠ " + storedBad
+    : stored ? "not connected yet — press Connect Drive"
+    : "no Client ID saved", !!GD.token);
   $("upSaveId").onclick = () => {
-    localStorage.setItem(GD.CLIENT_KEY, ($("upClientId").value || "").trim());
-    upSetConn("Client ID saved — press Connect Drive", false); toast("Client ID saved");
+    const raw = ($("upClientId").value || "").trim();
+    const bad = clientIdProblem(raw);
+    if (bad) {
+      // If it's a folder link, don't just complain — put it where it actually belongs.
+      if (/drive\.google\.com|\/folders\//i.test(raw)) {
+        $("upRootId").value = extractFolderId(raw);
+        localStorage.setItem(GD.ROOT_KEY, $("upRootId").value);
+        $("upClientId").value = "";
+        upSetConn("⚠ " + bad + " (moved it to step 2 for you)", false);
+      } else upSetConn("⚠ " + bad, false);
+      toast(bad.slice(0, 120));
+      return;
+    }
+    localStorage.setItem(GD.CLIENT_KEY, raw);
+    upSetConn("Client ID saved ✓ — press Connect Drive", false); toast("Client ID saved");
   };
+  // step 2 accepts a pasted Drive URL as readily as a bare id
+  $("upRootId").onchange = () => { $("upRootId").value = extractFolderId($("upRootId").value); };
   $("upConnect").onclick = gdConnect;
   $("upLoadFolders").onclick = gdLoadFolders;
   $("upAll").onclick = () => {
