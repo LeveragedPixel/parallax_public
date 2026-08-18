@@ -11,7 +11,7 @@
    Self-contained (no themes.css). Keeps every class and ID contract that
    app.js depends on. v37 polish pass: layered surfaces, brand mark, real
    focus rings, tabular numerals, calmer motion, stronger column targeting. */
-:root{
+:root{color-scheme:dark;
   --void:#0b0d12; --panel:#12151c; --panel2:#181c25; --raised:#1f2430;
   --txt:#e8eaf0; --dim:#9aa1b1; --faint:#7d8496; --line:#232937; --line2:#323a4d;
   --pri:#6c8cff; --pri-hi:#8aa4ff; --pri-dim:rgba(108,140,255,.14); --glow-pri:rgba(108,140,255,.25);
@@ -39,6 +39,13 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
 button{font:inherit;cursor:pointer;border:0}
 input,textarea,select{font:inherit}
 select,input,textarea{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+/* A <select>'s dropdown is painted by the browser, not by this stylesheet, and without an
+   explicit color-scheme it paints on WHITE — so every option was light-on-light and unreadable
+   until you highlighted it. All 21 themes here are dark, so declaring it once fixes every
+   dropdown (and the scrollbars) at the source. */
+/* Options must also not inherit a control's MUTED colour: .tbtn/.galtool are deliberately dim as
+   closed controls, but a menu item is body text and needs full contrast on the popup surface. */
+option{color:var(--txt)}
 select:hover,input:hover,textarea:hover{border-color:var(--line2)}
 select:focus,input:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:var(--ring)}
 textarea{resize:vertical}
