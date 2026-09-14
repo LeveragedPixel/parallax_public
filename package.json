@@ -1,10 +1,12 @@
 {
-  "name": "parallax-2",
+  "name": "parallax",
   "version": "2.0.0",
-  "private": true,
+  "private": false,
+  "license": "MIT",
   "type": "module",
-  "description": "Parallax 2.0 — dual-mind AI console built on a Projects engine (Cloudflare Pages + KV).",
+  "description": "A self-hosted AI studio \u2014 dual-model chat, image and video generation, and a projects-and-skills engine \u2014 running entirely on Cloudflare's edge with no build step and no runtime dependencies.",
   "scripts": {
-    "check": "for f in functions/api/*.js; do node --check \"$f\" && echo \"ok  $f\"; done"
+    "check": "for f in functions/api/*.js; do node --check \"$f\" && echo \"ok  $f\"; done",
+    "test": "node tests/demo-isolation.mjs"
   }
 }

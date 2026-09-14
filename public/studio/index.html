@@ -312,6 +312,9 @@ button:focus-visible,label:focus-visible{box-shadow:var(--ring);border-radius:8p
 .login button{width:100%;margin-top:20px;background:linear-gradient(180deg,var(--pri-hi),var(--pri));color:#fff;border-radius:9px;padding:11px;font-weight:600;box-shadow:var(--sh-1),inset 0 1px 0 rgba(255,255,255,.18)}
 .login button:hover{filter:brightness(1.07)}
 .login .msg{color:var(--red);font-size:var(--f4);margin-top:10px;min-height:16px}
+.login button.ghost{margin-top:10px;background:none;color:var(--pri);border:1px solid var(--line2);box-shadow:none;font-weight:600}
+.login button.ghost:hover{filter:none;border-color:var(--pri);background:color-mix(in srgb,var(--pri) 10%,transparent)}
+.login .demo-note{color:var(--faint);font-size:var(--f2);line-height:1.5;margin-top:8px;text-align:center}
 .toast{position:fixed;bottom:18px;left:50%;transform:translate(-50%,6px);background:var(--raised);border:1px solid var(--line2);padding:9px 16px;border-radius:9px;font-size:var(--f4);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:70;box-shadow:var(--sh-2)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .hide{display:none!important}
@@ -630,6 +633,9 @@ body[data-screen="board"] #chatView{display:none}
     <label>Username</label><input id="u" autocomplete="username" />
     <label>Password</label><input id="p" type="password" autocomplete="current-password" />
     <button id="loginBtn">Log in</button>
+    <button id="demoBtn" class="ghost">Try the demo — no account needed</button>
+    <div class="demo-note">The demo gives you a private workspace that lasts 24 hours.
+      Connect your own provider key to generate.</div>
     <div id="loginMsg" class="msg"></div>
   </div>
 </div>

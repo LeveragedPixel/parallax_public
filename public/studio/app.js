@@ -267,6 +267,29 @@ async function login() {
     token = d.token; localStorage.setItem(TOKEN_KEY, token); showApp();
   } catch (e) { $("loginMsg").textContent = String(e); }
 }
+/* The demo needs no credentials, so it does not reuse login(): sending empty strings through
+   the normal path would show "login failed" from the operator-credential branch whenever the
+   demo happened to be turned off, which tells the visitor nothing useful. */
+async function demoLogin() {
+  const btn = $("demoBtn");
+  btn.disabled = true;
+  $("loginMsg").textContent = "";
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "demo" }),
+    });
+    const d = await r.json();
+    if (!d.ok) { $("loginMsg").textContent = d.error || "The demo is unavailable right now."; return; }
+    token = d.token; localStorage.setItem(TOKEN_KEY, token); showApp();
+  } catch (e) {
+    $("loginMsg").textContent = String(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function logout() { token = ""; localStorage.removeItem(TOKEN_KEY); colConvos = {}; loadedConvos.clear(); hide("app"); show("login"); }
 async function showApp() {
   hide("login"); show("app"); $("operator").textContent = "operator: " + userFromToken(token);
@@ -2546,6 +2569,7 @@ if ($("verBadge")) $("verBadge").textContent = "PARALLAX v" + BUILD;
 initTheme();
 setupResizers();
 $("loginBtn").onclick = login;
+$("demoBtn").onclick = demoLogin;
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 $("logoutBtn").onclick = logout;
 $("scrChat").onclick = () => setScreen("chat");

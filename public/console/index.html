@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Studio Console · Leveraged Pixel</title>
+<title>Studio Console · Parallax</title>
 <style>
   :root{ --void:#0a0a0c; --void2:#111114; --panel:#141418; --crimson:#c8102e; --crimson-hot:#ff3d4d; --crimson-txt:#ff5560;
     --silver:#c9ccd1; --silver-b:#f2f4f7; --ash:#6b6e73; --ash-d:#3a3c40; --line:#1e1f24; --green:#46d17f; --amber:#ffb454;
@@ -186,7 +186,7 @@ function editRepo(r){
       <label class="f">Owner</label><input id="e_owner" value="${esc(e.owner||'')}" placeholder="your-github-user" />
       <label class="f">Repo</label><input id="e_repo" value="${esc(e.repo||'')}" placeholder="parallax" />
       <label class="f">Branch</label><input id="e_branch" value="${esc(e.branch||'main')}" />
-      <label class="f">Live URL (optional)</label><input id="e_live" value="${esc(e.liveUrl||'')}" placeholder="https://example.com" />
+      <label class="f">Live URL (optional)</label><input id="e_live" value="${esc(e.liveUrl||'')}" placeholder="https://your-site.example" />
       <div class="rowflex" style="margin-top:16px">
         <button class="btn" id="e_save">SAVE</button>
         <button class="btn ghost" id="e_cancel">Cancel</button>
@@ -291,7 +291,7 @@ function renderPubList(){
 }
 // Guard: catch the #1 foot-gun — publishing the Parallax app to public/index.html, which
 // overwrites the landing so the root domain shows Parallax. The landing's <title> is
-// "Leveraged Pixel Studios"; Parallax's is "PARALLAX 2.0", so we can tell them apart.
+// site's own title, so a Parallax build heading for the site root is recognisable.
 function landingClobberFile(){
   return pubFiles.find(f=>{
     if(f.delete||f.base64) return false;

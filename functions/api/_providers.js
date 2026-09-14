@@ -4,21 +4,36 @@
 
 const VENICE = "https://api.venice.ai/api/v1";
 
+import { isDemo, demoSharesKeys } from "./_demo.js";
+
 export async function getKeys(env, user) {
   let stored = {};
   if (env.PARALLAX_KV) {
     const raw = await env.PARALLAX_KV.get("keys:" + user);
     if (raw) { try { stored = JSON.parse(raw) || {}; } catch {} }
   }
+
+  /* A demo visitor does NOT inherit the operator's environment keys.
+     Without this, the first stranger to open the demo and press Generate spends the
+     operator's credit — no cap, no attribution, and no way to tell it is happening until
+     the bill arrives. A demo user's OWN saved key still works (stored.* is checked first),
+     so the demo is fully usable bring-your-own-key. An operator who wants to fund it sets
+     DEMO_SHARED_KEYS=on.
+
+     The admin keys are never shared, even then: they exist to read organisation-wide
+     billing, which is nobody's business but the operator's. */
+  const inherits = !isDemo(user) || demoSharesKeys(env);
+  const envKey = (v) => (inherits ? v || "" : "");
+
   return {
-    anthropic: stored.anthropic || env.ANTHROPIC_API_KEY || "",
-    openai: stored.openai || env.OPENAI_API_KEY || "",
-    venice: stored.venice || env.VENICE_API_KEY || "",
-    artcraft: stored.artcraft || env.ARTCRAFT_API_KEY || "",
-    artcraftBase: (stored.artcraft_base || env.ARTCRAFT_BASE_URL || "").replace(/\/+$/, ""),
+    anthropic: stored.anthropic || envKey(env.ANTHROPIC_API_KEY),
+    openai: stored.openai || envKey(env.OPENAI_API_KEY),
+    venice: stored.venice || envKey(env.VENICE_API_KEY),
+    artcraft: stored.artcraft || envKey(env.ARTCRAFT_API_KEY),
+    artcraftBase: (stored.artcraft_base || envKey(env.ARTCRAFT_BASE_URL)).replace(/\/+$/, ""),
     // Admin keys (optional): the ONLY key type Anthropic/OpenAI let read org spend.
-    anthropicAdmin: stored.anthropic_admin || env.ANTHROPIC_ADMIN_KEY || "",
-    openaiAdmin: stored.openai_admin || env.OPENAI_ADMIN_KEY || "",
+    anthropicAdmin: isDemo(user) ? "" : (stored.anthropic_admin || env.ANTHROPIC_ADMIN_KEY || ""),
+    openaiAdmin: isDemo(user) ? "" : (stored.openai_admin || env.OPENAI_ADMIN_KEY || ""),
   };
 }
 export async function saveKey(env, user, field, value) {

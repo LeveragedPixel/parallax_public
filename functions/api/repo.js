@@ -18,6 +18,7 @@
 
 import { verifyToken } from "./_verify.js";
 import { tokenFrom, userFromToken } from "./_session.js";
+import { isDemo } from "./_demo.js";
 
 const GH = "https://api.github.com";
 function json(o, s = 200) { return new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } }); }
@@ -86,6 +87,15 @@ export async function onRequestPost(context) {
   const token = tokenFrom(request);
   if (!(await verifyToken(token, env.SESSION_SECRET))) return json({ error: "unauthorized" }, 401);
   const user = userFromToken(token);
+
+  /* The Studio Console commits to GitHub with the operator's token. A demo visitor is a
+     stranger, so this is refused before any action is read — including the read-only ones.
+     There is no setting to relax it: handing anonymous visitors write access to a repo is
+     never the right default, and an operator who wants someone in the console can give
+     them the real login. */
+  if (isDemo(user)) {
+    return json({ error: "The Studio Console is not available in the demo — it publishes to a real repository." }, 403);
+  }
 
   let body; try { body = await request.json(); } catch { return json({ error: "bad body" }, 400); }
   const action = body.action;
