@@ -1,4 +1,4 @@
-// functions/api/_gallery.js — the on-site media store (gallery-first; Google Drive later).
+// functions/api/_gallery.js — the on-site media store: every render, filed by project.
 // Index:  "media_index:<user>" -> [{id,type,provider,prompt,createdAt,meta}]
 // Item:   "media:<user>:<id>"   -> {dataUrl?|url?, ...}
 // Stored so generated images/videos can be referenced any time from the deck.
