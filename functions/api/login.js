@@ -11,7 +11,14 @@
 // throwaway workspace per visitor rather than a shared one, and the account it issues is
 // deliberately less privileged than the operator's — see _demo.js for exactly how.
 
+// GOTCHA #6: Cloudflare Pages replaces the body of ANY non-2xx response with its own branded
+// HTML. Every login screen reads the JSON body to tell the user what went wrong, so failures
+// return HTTP 200 carrying { ok: false, error } rather than 401/429 — at a non-2xx status the
+// message the user needs is discarded before it reaches them. No front-end reads the status
+// code; they all branch on `ok`.
+
 import { demoEnabled, newDemoUser, DEMO_TTL_MS } from "./_demo.js";
+import { checkLoginRate, recordLoginFailure, clearLoginFailures, ipOf } from "./_loginrate.js";
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -20,7 +27,7 @@ export async function onRequestPost(context) {
   try {
     body = await request.json();
   } catch {
-    return json({ error: "Bad request" }, 400);
+    return json({ ok: false, error: "Bad request" });
   }
 
   const inUser = (body?.username ?? "").trim();
@@ -33,9 +40,9 @@ export async function onRequestPost(context) {
   // is still usable. A demo instance that refuses everyone because its owner never
   // configured a login would be a confusing way to fail.
   if (/^demo$/i.test(inUser) && !inPass) {
-    if (!demoEnabled(env)) return json({ error: "The demo is turned off on this instance." }, 403);
+    if (!demoEnabled(env)) return json({ ok: false, error: "The demo is turned off on this instance." });
     if (!env.SESSION_SECRET) {
-      return json({ error: "Server not configured: missing SESSION_SECRET" }, 500);
+      return json({ ok: false, error: "Server not configured: missing SESSION_SECRET" });
     }
     const user = newDemoUser();
     const exp = Date.now() + DEMO_TTL_MS;
@@ -43,26 +50,36 @@ export async function onRequestPost(context) {
       const token = await signToken(user, exp, env.SESSION_SECRET);
       return json({ ok: true, token, exp, demo: true, user });
     } catch (err) {
-      return json({ error: "Token signing failed: " + (err.message || "unknown") }, 500);
+      return json({ ok: false, error: "Token signing failed: " + (err.message || "unknown") });
     }
   }
 
   if (!envUser || !envPass) {
-    return json({ error: "Server not configured: set APP_USER/APP_PASS (or AUTH_USERNAME/AUTH_PASSWORD)" }, 500);
+    return json({ ok: false, error: "Server not configured: set APP_USER/APP_PASS (or AUTH_USERNAME/AUTH_PASSWORD)" });
   }
+
+  // Refuse before comparing anything, so a blocked caller learns nothing from timing.
+  const ip = ipOf(request);
+  const rl = await checkLoginRate(env, ip);
+  if (!rl.ok) {
+    return json({ ok: false, error: `Too many failed attempts. Try again in about ${rl.retryInMin} minutes.` });
+  }
+
   if (inUser !== envUser || inPass !== envPass) {
-    return json({ error: "Invalid login" }, 401);
+    await recordLoginFailure(env, ip);
+    return json({ ok: false, error: "Invalid login" });
   }
   if (!env.SESSION_SECRET) {
-    return json({ error: "Server not configured: missing SESSION_SECRET" }, 500);
+    return json({ ok: false, error: "Server not configured: missing SESSION_SECRET" });
   }
 
   try {
     const exp = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
     const token = await signToken(inUser, exp, env.SESSION_SECRET);
+    await clearLoginFailures(env, ip);   // normal use never accumulates toward the limit
     return json({ ok: true, token, exp });
   } catch (err) {
-    return json({ error: "Token signing failed: " + (err.message || "unknown") }, 500);
+    return json({ ok: false, error: "Token signing failed: " + (err.message || "unknown") });
   }
 }
 

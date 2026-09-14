@@ -106,6 +106,12 @@ browser reads a response body, that endpoint must return HTTP 200 and carry the 
 outcome in its JSON. A failing model call that returned 500 showed up as a silently blank
 answer lane — the symptom looked like the model, the cause was the CDN.
 
+**Any non-2xx response body is thrown away, so errors must travel at HTTP 200.** This is
+the same rule from a different angle, and it bites hardest where it matters least to the
+happy path: a rate-limit message returned as `429` reaches the browser as Cloudflare's
+branded HTML, `response.json()` throws, and the user is told nothing. Every endpoint whose
+body the client reads returns 200 and carries the outcome in its JSON.
+
 **Module imports resolve at bundle time, not at runtime.** A defensive
 `await import("some:module")` inside a `try/catch` does not degrade gracefully if that
 module is unavailable — the *build* fails and every route goes down with it. No `catch` can
@@ -115,7 +121,8 @@ save you, because nothing ran. Reach for `fetch()` to an HTTPS endpoint instead.
 
 ```
 npm run check      # node --check every function
-npm test           # the demo must never reach the operator's keys
+npm test           # the demo must never reach the operator's keys;
+                   # /api/login must stop a brute force without locking the operator out
 ```
 
 ## License

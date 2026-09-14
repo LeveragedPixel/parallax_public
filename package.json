@@ -7,6 +7,6 @@
   "description": "A self-hosted AI studio \u2014 dual-model chat, image and video generation, and a projects-and-skills engine \u2014 running entirely on Cloudflare's edge with no build step and no runtime dependencies.",
   "scripts": {
     "check": "for f in functions/api/*.js; do node --check \"$f\" && echo \"ok  $f\"; done",
-    "test": "node tests/demo-isolation.mjs"
+    "test": "node tests/demo-isolation.mjs && node tests/login-ratelimit.mjs"
   }
 }
